@@ -61,7 +61,7 @@ abstract sealed class ConfigMapWatcherChangeDetector extends KubernetesClientEve
 	protected final void onEvent(KubernetesObject configMap) {
 		// this::refreshTrigger is coming from BusEventBasedConfigMapWatcherChangeDetector
 		WatcherUtil.onEvent(configMap, CONFIG_MAP_LABEL, CONFIG_MAP_APPS_ANNOTATION, refreshDelay, executorService,
-				"config-map", this::triggerRefresh);
+				Source.CONFIGMAP, this::triggerRefresh);
 	}
 
 }

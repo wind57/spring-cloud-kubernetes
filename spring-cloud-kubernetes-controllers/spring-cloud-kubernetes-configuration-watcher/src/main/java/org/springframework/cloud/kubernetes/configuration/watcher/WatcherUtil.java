@@ -46,7 +46,7 @@ final class WatcherUtil {
 	}
 
 	static void onEvent(KubernetesObject kubernetesObject, String label, String annotationName, long refreshDelay,
-			ScheduledExecutorService executorService, String type,
+			ScheduledExecutorService executorService, Source source,
 			BiFunction<KubernetesObject, String, Mono<Void>> triggerRefresh) {
 
 		String name = kubernetesObject.getMetadata().getName();
@@ -61,12 +61,13 @@ final class WatcherUtil {
 			}
 
 			LOG.info(() -> "will schedule remote refresh based on apps : " + apps);
-			apps.forEach(appName -> schedule(type, appName, refreshDelay, executorService, triggerRefresh,
+			apps.forEach(appName -> schedule(source, appName, refreshDelay, executorService, triggerRefresh,
 					kubernetesObject));
 
 		}
 		else {
-			LOG.debug(() -> "Not publishing event." + type + ": " + name + " does not contain the label " + label);
+			LOG.debug(() -> "Not publishing event for : " + source.toString() + " with name : " + name
+					+ " as it does not contain the label " + label);
 		}
 	}
 
@@ -111,11 +112,11 @@ final class WatcherUtil {
 		return Optional.ofNullable(kubernetesObject.getMetadata()).map(V1ObjectMeta::getAnnotations).orElse(Map.of());
 	}
 
-	private static void schedule(String type, String appName, long refreshDelay,
+	private static void schedule(Source source, String appName, long refreshDelay,
 			ScheduledExecutorService executorService, BiFunction<KubernetesObject, String, Mono<Void>> triggerRefresh,
 			KubernetesObject kubernetesObject) {
-		LOG.debug(() -> "Scheduling remote refresh event to be published for " + type + ": with appName : " + appName
-				+ " to be published in " + refreshDelay + " milliseconds");
+		LOG.debug(() -> "Scheduling remote refresh event to be published for " + source.toString() + ": with appName : "
+				+ appName + " to be published in " + refreshDelay + " milliseconds");
 		executorService.schedule(() -> {
 			try {
 				triggerRefresh.apply(kubernetesObject, appName).subscribe();

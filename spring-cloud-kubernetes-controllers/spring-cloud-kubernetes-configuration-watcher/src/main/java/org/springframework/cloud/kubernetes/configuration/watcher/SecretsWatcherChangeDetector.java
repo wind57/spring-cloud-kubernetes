@@ -59,7 +59,7 @@ abstract sealed class SecretsWatcherChangeDetector extends KubernetesClientEvent
 	@Override
 	protected final void onEvent(KubernetesObject secret) {
 		// this::refreshTrigger is coming from BusEventBasedSecretsWatcherChangeDetector
-		WatcherUtil.onEvent(secret, SECRET_LABEL, SECRET_APPS_ANNOTATION, refreshDelay, executorService, "secret",
+		WatcherUtil.onEvent(secret, SECRET_LABEL, SECRET_APPS_ANNOTATION, refreshDelay, executorService, Source.SECRET,
 				this::triggerRefresh);
 	}
 
