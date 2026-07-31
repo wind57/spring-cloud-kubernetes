@@ -47,7 +47,7 @@ jobs:
     with:
       branches: ${{ inputs.branches }}
       custom_build_command: |
-        ./mvnw clean deploy -P spring -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true
+        ./mvnw clean deploy  --settings release-ci-settings.xml -P spring -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true  -DaltSnapshotDeploymentRepository=spring-commercial-snapshot::default::https://usw1.packages.broadcom.com/artifactory/spring-enterprise-maven-dev-local 
       runs_on: ubuntu22-2-8
       # Deploy only, no tests, so the default hour is ample.
       timeout_minutes: 60
