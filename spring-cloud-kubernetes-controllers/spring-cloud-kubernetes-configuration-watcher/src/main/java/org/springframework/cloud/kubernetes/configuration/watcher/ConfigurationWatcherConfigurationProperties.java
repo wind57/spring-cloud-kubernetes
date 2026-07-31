@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.convert.DurationUnit;
+import org.springframework.cloud.kubernetes.configuration.watcher.ha.ConfigurationWatcherHaProperties;
 
 /**
  * @author Ryan Baxter

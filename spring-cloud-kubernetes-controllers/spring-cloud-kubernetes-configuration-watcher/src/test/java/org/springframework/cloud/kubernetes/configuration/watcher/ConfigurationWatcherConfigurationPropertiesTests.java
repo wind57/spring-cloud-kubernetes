@@ -46,7 +46,7 @@ class ConfigurationWatcherConfigurationPropertiesTests {
 			assertThat(props).isNotNull();
 			assertThat(props.getHa().isEnabled()).isFalse();
 			assertThat(props.getHa().getLeaseName()).isEqualTo("configuration-watcher-ha");
-			assertThat(props.getHa().getLeaseNamespace()).isNull();
+			assertThat(props.getHa().getLeaseNamespace()).isEqualTo("default");
 		});
 	}
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.springframework.cloud.kubernetes.configuration.watcher;
+package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
 /**
  * Properties for watcher HA state persisted in a Lease.
@@ -27,7 +27,7 @@ public class ConfigurationWatcherHaProperties {
 
 	private String leaseName = "configuration-watcher-ha";
 
-	private String leaseNamespace;
+	private String leaseNamespace = "default";
 
 	public boolean isEnabled() {
 		return enabled;
