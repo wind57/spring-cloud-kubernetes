@@ -44,6 +44,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static io.kubernetes.client.openapi.JSON.serialize;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LeaseConfigurationWatcherStateStoreTests {
 
@@ -158,6 +159,58 @@ class LeaseConfigurationWatcherStateStoreTests {
 							equalTo(configMapResourceVersion)))
 			.withRequestBody(matchingJsonPath("$.metadata.annotations." + jsonPath(SECRET_RESOURCE_VERSION_ANNOTATION),
 					equalTo(existingSecretResourceVersion))));
+	}
+
+	/**
+	 * <pre>
+	 * 	- reading the HA lease fails with an error other than 404
+	 * 	- readOrCreate must fail instead of pretending that no previous state exists
+	 * </pre>
+	 */
+	@Test
+	void readOrCreateThrowsWhenLeaseReadFailsWithNon404() {
+		stubFor(get(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(500).withBody("boom")));
+
+		assertThatThrownBy(() -> stateStore.readOrCreate()).isInstanceOf(IllegalStateException.class)
+			.hasMessage("Failed to read watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
+	}
+
+	/**
+	 * <pre>
+	 * 	- the leader starts and the HA lease does not exist yet
+	 * 	- creating that lease fails
+	 * 	- readOrCreate must fail instead of returning an empty checkpoint
+	 * </pre>
+	 */
+	@Test
+	void readOrCreateThrowsWhenMissingLeaseCanNotBeCreated() {
+		stubFor(get(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(404)));
+		stubFor(post(urlEqualTo(LEASE_COLLECTION_URL)).willReturn(aResponse().withStatus(500).withBody("boom")));
+
+		assertThatThrownBy(() -> stateStore.readOrCreate()).isInstanceOf(IllegalStateException.class)
+			.hasMessage("Failed to create watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
+	}
+
+	/**
+	 * <pre>
+	 * 	- the existing HA lease is read successfully
+	 * 	- replacing it with the updated annotations fails
+	 * 	- write must surface that failure to the caller
+	 * </pre>
+	 */
+	@Test
+	void writeThrowsWhenLeaseUpdateFails() {
+		String existingSecretResourceVersion = "22";
+		String configMapResourceVersion = "11";
+
+		V1Lease existingLease = leaseWithAnnotations(null, existingSecretResourceVersion);
+
+		stubFor(get(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(200).withBody(serialize(existingLease))));
+		stubFor(put(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(500).withBody("boom")));
+
+		assertThatThrownBy(() -> stateStore.write(new ConfigurationWatcherState(configMapResourceVersion, null)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("Failed to write watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
 	}
 
 	private static V1Lease leaseWithAnnotations(String configMapResourceVersion, String secretResourceVersion) {
