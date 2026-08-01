@@ -48,11 +48,9 @@ jobs:
       branches: ${{ inputs.branches }}
       custom_build_command: |
         if [[ "$SHOULD_DEPLOY" == "true" ]]; then                                                                                                                                        
-          ./mvnw clean deploy $DEPLOY_PROFILES -B -U $MAVEN_FLAGS $MAVEN_SETTINGS $MAVEN_DEPLOY_FLAGS \                                                                                  
-            -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true                                                                                            
+          ./mvnw clean deploy $DEPLOY_PROFILES -B -U $MAVEN_FLAGS $MAVEN_SETTINGS $MAVEN_DEPLOY_FLAGS -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true              
         else                                                                                                                                                                             
-          ./mvnw clean install -Pspring -B -U $MAVEN_FLAGS $MAVEN_SETTINGS \                                                                                                             
-            -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true                                                                                            
+          ./mvnw clean install -Pspring -B -U $MAVEN_FLAGS $MAVEN_SETTINGS -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true                                         
         fi
       runs_on: ubuntu22-2-8
       # Deploy only, no tests, so the default hour is ample.
