@@ -338,7 +338,7 @@ jobs:
       branches: ${{ inputs.branch }}
       custom_build_command: |
         if [[ "$SHOULD_DEPLOY" == "true" ]]; then
-          ./mvnw clean deploy -Pspring,docs -DskipTests -DskipITs -Dspring-boot.build-image.skip=true -B -U
+          ./mvnw $MAVEN_SETTINGS clean deploy -Pspring,docs -DskipTests -DskipITs -Dspring-boot.build-image.skip=true -B -U $MAVEN_DEPLOY_FLAGS
         else
           echo "Will not deploy artifacts"
         fi

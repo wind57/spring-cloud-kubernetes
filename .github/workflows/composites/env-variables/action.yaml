@@ -21,3 +21,22 @@ runs:
         
         echo "BRANCH_NAME=$(echo $GITHUB_HEAD_REF)" >> $GITHUB_ENV
         echo "BASE_BRANCH_NAME=$(echo $GITHUB_BASE_REF)" >> $GITHUB_ENV
+
+        # Maven settings file for this branch, exported as MAVEN_SETTINGS and used by
+        # every ./mvnw invocation in the workflows and composites.
+        #
+        # When performing GA releases we use release-ci-settings.xml.
+        # When running CI builds we use .settings.xml committed at the repo root.
+        #
+        # The path is absolute because several composites invoke Maven from a subdirectory
+        # (.././mvnw), where a relative -s path would not resolve.
+        if [[ -f "$GITHUB_WORKSPACE/release-ci-settings.xml" ]]; then
+          echo "MAVEN_SETTINGS=-s $GITHUB_WORKSPACE/release-ci-settings.xml" >> $GITHUB_ENV
+          echo "Maven settings: release-ci-settings.xml (commercial release branch)"
+        elif [[ -f "$GITHUB_WORKSPACE/.settings.xml" ]]; then
+          echo "MAVEN_SETTINGS=-s $GITHUB_WORKSPACE/.settings.xml" >> $GITHUB_ENV
+          echo "Maven settings: .settings.xml"
+        else
+          echo "MAVEN_SETTINGS=" >> $GITHUB_ENV
+          echo "Maven settings: none found, using Maven defaults"
+        fi
