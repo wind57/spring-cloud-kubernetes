@@ -146,7 +146,75 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 		// ------------------------------------------------------------------------------------------------------------
 		// 4. assertions
 
-		changeDetectorAssert();
+		changeDetectorAssert(false);
+	}
+
+	/**
+	 * <pre>
+	 *     - HA mode is enabled, so inform() does not start the informer.
+	 *     - an explicit start() starts the informer and it processes the events.
+	 * </pre>
+	 */
+	@Test
+	void watchStartsOnlyAfterExplicitStartInHaMode() {
+
+		// ------------------------------------------------------------------------------------------------------------
+		// 0. initial request of the informer ( resourceVersion=0 )
+
+		V1Secret dbPassword = new V1Secret().metadata(new V1ObjectMeta().name("db-password").resourceVersion("1"))
+			.putStringDataItem("password", Base64.getEncoder().encodeToString("p455w0rd".getBytes()))
+			.putDataItem("password", Base64.getEncoder().encode("p455w0rd".getBytes()))
+			.putStringDataItem("username", Base64.getEncoder().encodeToString("user".getBytes()))
+			.putDataItem("username", Base64.getEncoder().encode("user".getBytes()));
+
+		V1SecretList secretList = new V1SecretList().metadata(new V1ListMeta().resourceVersion("1"))
+			.items(List.of(dbPassword));
+
+		stubFor(get(urlMatching("/api/v1/namespaces/default/secrets.*")).withQueryParam("watch", equalTo("false"))
+			.withQueryParam("resourceVersion", equalTo("0"))
+			.willReturn(aResponse().withStatus(200).withBody(JSON.serialize(secretList))));
+
+		// ------------------------------------------------------------------------------------------------------------
+		// 1. first watch response to request with resourceVersion=1
+
+		V1Secret dbPasswordUpdated = new V1Secret()
+			.metadata(new V1ObjectMeta().name("db-password").resourceVersion("2"))
+			.putStringDataItem("password", Base64.getEncoder().encodeToString("p455w0rd2".getBytes()))
+			.putDataItem("password", Base64.getEncoder().encode("p455w0rd2".getBytes()))
+			.putStringDataItem("username", Base64.getEncoder().encodeToString("user".getBytes()))
+			.putDataItem("username", Base64.getEncoder().encode("user".getBytes()));
+
+		Response<V1Secret> watchResponse = new Response<>(MODIFIED.name(), dbPasswordUpdated);
+
+		stubFor(get(urlMatching("/api/v1/namespaces/default/secrets.*")).withQueryParam("watch", equalTo("true"))
+			.withQueryParam("resourceVersion", equalTo("1"))
+			.willReturn(aResponse().withStatus(200).withBody(JSON.serialize(watchResponse))));
+
+		// ------------------------------------------------------------------------------------------------------------
+		// 2. second watch response to request with resourceVersion=2
+
+		V1Secret rabbitPasswordAdded = new V1Secret().metadata(new V1ObjectMeta().name("rabbit-password"))
+			.putDataItem("rabbit-pw", Base64.getEncoder().encode("password".getBytes()));
+
+		Response<V1Secret> rabbitPasswordAddedResponse = new Response<>(ADDED.name(), rabbitPasswordAdded);
+
+		stubFor(get(urlMatching("/api/v1/namespaces/default/secrets.*")).withQueryParam("watch", equalTo("true"))
+			.withQueryParam("resourceVersion", equalTo("2"))
+			.willReturn(aResponse().withStatus(200).withBody(JSON.serialize(rabbitPasswordAddedResponse))));
+
+		// ------------------------------------------------------------------------------------------------------------
+		// 3. third watch response to request with resourceVersion=3
+
+		V1Secret rabbitPasswordDeleted = new V1Secret().metadata(new V1ObjectMeta().name("rabbit-password"))
+			.putDataItem("rabbit-pw", Base64.getEncoder().encode("password".getBytes()));
+
+		Response<V1Secret> rabbitPasswordDeletedResponse = new Response<>(DELETED.name(), rabbitPasswordDeleted);
+
+		stubFor(get(urlMatching("/api/v1/namespaces/default/secrets.*")).withQueryParam("watch", equalTo("true"))
+			.withQueryParam("resourceVersion", equalTo("3"))
+			.willReturn(aResponse().withStatus(200).withBody(JSON.serialize(rabbitPasswordDeletedResponse))));
+
+		changeDetectorAssert(true);
 	}
 
 	/**
@@ -260,6 +328,10 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 	}
 
 	private void changeDetectorAssert() {
+		changeDetectorAssert(true);
+	}
+
+	private void changeDetectorAssert(boolean haEnabled) {
 
 		// coreV1Api
 		ApiClient apiClient = new ClientBuilder().setBasePath("http://localhost:" + wireMockServer.port()).build();
@@ -290,9 +362,14 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 
 		// change detector
 		KubernetesClientEventBasedSecretsChangeDetector changeDetector = new KubernetesClientEventBasedSecretsChangeDetector(
-				coreV1Api, environment, properties, strategy, locator, kubernetesNamespaceProvider);
+				coreV1Api, environment, properties, strategy, locator, kubernetesNamespaceProvider, haEnabled);
 
 		changeDetector.inform();
+
+		if (haEnabled) {
+			Assertions.assertThat(onEventCalls[0]).isZero();
+			changeDetector.start();
+		}
 
 		// all 4 events are caught
 		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] >= 4);

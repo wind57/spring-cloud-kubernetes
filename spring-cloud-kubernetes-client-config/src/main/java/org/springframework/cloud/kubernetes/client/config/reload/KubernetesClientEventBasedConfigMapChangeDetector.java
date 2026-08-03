@@ -33,7 +33,6 @@ import io.kubernetes.client.openapi.models.V1ConfigMapList;
 import io.kubernetes.client.util.CallGeneratorParams;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import org.apache.commons.logging.LogFactory;
 
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigMapPropertySource;
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigMapPropertySourceLocator;
@@ -54,8 +53,7 @@ import static org.springframework.cloud.kubernetes.client.config.KubernetesClien
  */
 public class KubernetesClientEventBasedConfigMapChangeDetector extends ConfigurationChangeDetector {
 
-	private static final LogAccessor LOG = new LogAccessor(
-			LogFactory.getLog(KubernetesClientEventBasedConfigMapChangeDetector.class));
+	private static final LogAccessor LOG = new LogAccessor(KubernetesClientEventBasedConfigMapChangeDetector.class);
 
 	private final CoreV1Api coreV1Api;
 
@@ -76,6 +74,12 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 	private final boolean monitoringConfigMaps;
 
 	private final Map<String, String> configMapsLabels;
+
+	// HA enabled for configuration watcher
+	private final boolean haEnabled;
+
+	// informers already running (skip starting more informers)
+	private volatile boolean running;
 
 	private final ResourceEventHandler<V1ConfigMap> handler = new ResourceEventHandler<>() {
 
@@ -110,6 +114,13 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientConfigMapPropertySourceLocator propertySourceLocator,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider) {
+		this(coreV1Api, environment, properties, strategy, propertySourceLocator, kubernetesNamespaceProvider, false);
+	}
+
+	public KubernetesClientEventBasedConfigMapChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
+			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
+			KubernetesClientConfigMapPropertySourceLocator propertySourceLocator,
+			KubernetesNamespaceProvider kubernetesNamespaceProvider, boolean haEnabled) {
 		super(strategy);
 		this.environment = environment;
 		this.propertySourceLocator = propertySourceLocator;
@@ -118,35 +129,47 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 		this.enableReloadFiltering = properties.enableReloadFiltering();
 		this.monitoringConfigMaps = properties.monitoringConfigMaps();
 		this.configMapsLabels = properties.configMapsLabels();
+		this.haEnabled = haEnabled;
 		namespaces = namespaces(kubernetesNamespaceProvider, properties, "configmap");
 	}
 
 	@PostConstruct
 	void inform() {
-		if (monitoringConfigMaps) {
-			LOG.info(() -> "Kubernetes event-based configMap change detector activated");
+		// In HA mode, defer informer startup until this instance acquires leadership.
+		// The leader callback restores the persisted state and then starts the informers.
+		if (!haEnabled) {
+			start();
+		}
+	}
 
-			Map<String, String> labelSelector;
+	public final void start() {
+		if (running || !monitoringConfigMaps) {
+			return;
+		}
 
-			if (enableReloadFiltering) {
-				LOG.warn(() -> "enable reload filtering is deprecated and will be removed in the next major release");
-				LOG.warn(() -> "use spring.cloud.kubernetes.reload.config-maps-labels instead");
-				if (!configMapsLabels.isEmpty()) {
-					LOG.warn(() -> "spring.cloud.kubernetes.reload.config-maps-labels is not empty, but "
-							+ "spring.cloud.kubernetes.reload.enable-reload-filtering is enabled and will override the former");
-				}
-				labelSelector = Map.of(ConfigReloadProperties.RELOAD_LABEL_FILTER, "true");
+		LOG.info(() -> "Kubernetes event-based configMap change detector activated");
+
+		Map<String, String> labelSelector;
+
+		if (enableReloadFiltering) {
+			LOG.warn(() -> "enable reload filtering is deprecated and will be removed in the next major release");
+			LOG.warn(() -> "use spring.cloud.kubernetes.reload.config-maps-labels instead");
+			if (!configMapsLabels.isEmpty()) {
+				LOG.warn(() -> "spring.cloud.kubernetes.reload.config-maps-labels is not empty, but "
+						+ "spring.cloud.kubernetes.reload.enable-reload-filtering is enabled and will override the former");
 			}
-			else {
-				labelSelector = configMapsLabels;
-			}
+			labelSelector = Map.of(ConfigReloadProperties.RELOAD_LABEL_FILTER, "true");
+		}
+		else {
+			labelSelector = configMapsLabels;
+		}
 
-			namespaces.forEach(namespace -> {
-				SharedIndexInformer<V1ConfigMap> informer;
+		namespaces.forEach(namespace -> {
+			SharedIndexInformer<V1ConfigMap> informer;
 
-				SharedInformerFactory factory = new SharedInformerFactory(apiClient);
-				factories.add(factory);
-				informer = factory
+			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
+			factories.add(factory);
+			informer = factory
 					.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedConfigMap(namespace)
 						.timeoutSeconds(params.timeoutSeconds)
 						.resourceVersion(params.resourceVersion)
@@ -154,21 +177,31 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 						.labelSelector(labelSelector(labelSelector))
 						.buildCall(null), V1ConfigMap.class, V1ConfigMapList.class);
 
-				LOG.debug(() -> "added configmap informer for namespace : " + namespace + " with labels : "
-						+ labelSelector);
+			LOG.debug(() -> "added configmap informer for namespace : " + namespace + " with labels : "
+					+ labelSelector);
 
-				informer.addEventHandler(handler);
-				informers.add(informer);
-				factory.startAllRegisteredInformers();
-			});
-		}
+			informer.addEventHandler(handler);
+			informers.add(informer);
+			factory.startAllRegisteredInformers();
+		});
+		running = true;
 
 	}
 
 	@PreDestroy
 	void shutdown() {
+		stop();
+	}
+
+	public final void stop() {
+		if (!running) {
+			return;
+		}
 		informers.forEach(SharedIndexInformer::stop);
 		factories.forEach(SharedInformerFactory::stopAllRegisteredInformers);
+		informers.clear();
+		factories.clear();
+		running = false;
 	}
 
 	protected void onEvent(KubernetesObject configMap) {

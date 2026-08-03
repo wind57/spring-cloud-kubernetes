@@ -78,6 +78,12 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 
 	private final Map<String, String> secretsLabels;
 
+	// HA enabled for configuration watcher
+	private final boolean haEnabled;
+
+	// informers already running (skip starting more informers)
+	private volatile boolean running;
+
 	private final ResourceEventHandler<V1Secret> handler = new ResourceEventHandler<>() {
 
 		@Override
@@ -112,6 +118,13 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientSecretsPropertySourceLocator propertySourceLocator,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider) {
+		this(coreV1Api, environment, properties, strategy, propertySourceLocator, kubernetesNamespaceProvider, false);
+	}
+
+	public KubernetesClientEventBasedSecretsChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
+			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
+			KubernetesClientSecretsPropertySourceLocator propertySourceLocator,
+			KubernetesNamespaceProvider kubernetesNamespaceProvider, boolean haEnabled) {
 		super(strategy);
 		this.environment = environment;
 		this.propertySourceLocator = propertySourceLocator;
@@ -120,11 +133,23 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 		this.enableReloadFiltering = properties.enableReloadFiltering();
 		this.monitoringSecrets = properties.monitoringSecrets();
 		this.secretsLabels = properties.secretsLabels();
+		this.haEnabled = haEnabled;
 		namespaces = namespaces(kubernetesNamespaceProvider, properties, "secret");
 	}
 
 	@PostConstruct
 	void inform() {
+		// In HA mode, defer informer startup until this instance acquires leadership.
+		// The leader callback restores the persisted state and then starts the informers.
+		if (!haEnabled) {
+			start();
+		}
+	}
+
+	public final void start() {
+		if (running || !monitoringSecrets) {
+			return;
+		}
 		LOG.info(() -> "Kubernetes event-based secrets change detector activated");
 
 		Map<String, String> labelSelector;
@@ -142,13 +167,12 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 			labelSelector = secretsLabels;
 		}
 
-		if (monitoringSecrets) {
-			namespaces.forEach(namespace -> {
-				SharedIndexInformer<V1Secret> informer;
+		namespaces.forEach(namespace -> {
+			SharedIndexInformer<V1Secret> informer;
 
-				SharedInformerFactory factory = new SharedInformerFactory(apiClient);
-				factories.add(factory);
-				informer = factory
+			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
+			factories.add(factory);
+			informer = factory
 					.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedSecret(namespace)
 						.timeoutSeconds(params.timeoutSeconds)
 						.resourceVersion(params.resourceVersion)
@@ -156,20 +180,30 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 						.labelSelector(labelSelector(labelSelector))
 						.buildCall(null), V1Secret.class, V1SecretList.class);
 
-				LOG.debug(() -> "secret informer for namespace : " + namespace + " with filter : " + secretsLabels);
+			LOG.debug(() -> "secret informer for namespace : " + namespace + " with filter : " + secretsLabels);
 
-				informer.addEventHandler(handler);
-				informers.add(informer);
-				factory.startAllRegisteredInformers();
-			});
-		}
+			informer.addEventHandler(handler);
+			informers.add(informer);
+			factory.startAllRegisteredInformers();
+		});
+		running = true;
 
 	}
 
 	@PreDestroy
 	void shutdown() {
+		stop();
+	}
+
+	public final void stop() {
+		if (!running) {
+			return;
+		}
 		informers.forEach(SharedIndexInformer::stop);
 		factories.forEach(SharedInformerFactory::stopAllRegisteredInformers);
+		informers.clear();
+		factories.clear();
+		running = false;
 	}
 
 	protected void onEvent(KubernetesObject secret) {
