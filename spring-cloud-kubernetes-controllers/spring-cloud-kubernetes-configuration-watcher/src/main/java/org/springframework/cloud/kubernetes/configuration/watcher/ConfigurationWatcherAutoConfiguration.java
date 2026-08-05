@@ -18,7 +18,6 @@ package org.springframework.cloud.kubernetes.configuration.watcher;
 
 import io.kubernetes.client.openapi.apis.CoreV1Api;
 
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -29,13 +28,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.cloud.bus.BusStreamAutoConfiguration;
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigMapPropertySourceLocator;
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientSecretsPropertySourceLocator;
-import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
-import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
 import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadProperties;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigurationUpdateStrategy;
-import org.springframework.cloud.kubernetes.configuration.watcher.ha.ConditionalOnConfigurationWatcherHAEnabled;
-import org.springframework.cloud.kubernetes.configuration.watcher.ha.ConfigurationWatcherHACoordinator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.AbstractEnvironment;
@@ -58,15 +53,6 @@ class ConfigurationWatcherAutoConfiguration {
 	@ConditionalOnMissingBean
 	WebClient webClient(WebClient.Builder webClientBuilder) {
 		return webClientBuilder.build();
-	}
-
-	@Bean
-	@ConditionalOnMissingBean
-	@ConditionalOnConfigurationWatcherHAEnabled
-	ConfigurationWatcherHACoordinator configurationWatcherHACoordinator(
-			ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector,
-			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector) {
-		return new ConfigurationWatcherHACoordinator(configMapDetector, secretsDetector);
 	}
 
 	@Bean
