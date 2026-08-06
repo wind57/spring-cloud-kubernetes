@@ -318,12 +318,16 @@ jobs:
     steps:
       - name: Check test results
         run: |
+          echo "test_when_cache_present: ${{ needs.test_when_cache_present.result }}"
+          echo "test_when_cache_missing: ${{ needs.test_when_cache_missing.result }}"
           if [ "${{ needs.test_when_cache_present.result }}" == "success" ] || \
              [ "${{ needs.test_when_cache_missing.result }}" == "success" ]; then
             echo "Tests passed"
             exit 0
           else
-            echo "Tests failed"
+            echo "No test job succeeded (see the results above). A result of 'cancelled'"
+            echo "means a test job timed out or was cancelled, not that a test assertion"
+            echo "failed - check the test job logs to tell them apart."
             exit 1
           fi
 
