@@ -80,6 +80,15 @@ jobs:
           echo "branch_safe=${SANITIZED_BRANCH}" >> $GITHUB_OUTPUT
 
       - name: set env variables
+        env:
+          # Read-write commercial credentials, deliberately blank on pull requests so that
+          # forked PRs fall back to the read-only secrets. The composite picks whichever
+          # pair is populated and exports COMMERCIAL_ARTIFACTORY_USERNAME/PASSWORD, which
+          # release-ci-settings.xml interpolates to reach commercial Artifactory.
+          PASSWORD: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_PASSWORD || '' }}
+          USERNAME: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_USERNAME || '' }}
+          RO_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD || secrets.ARTIFACTORY_RO_PASSWORD }}
+          RO_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME || secrets.ARTIFACTORY_RO_USERNAME }}
         uses: ./.github/workflows/composites/env-variables
 
       - name: setup project jdk
@@ -174,6 +183,15 @@ jobs:
         uses: ./.github/workflows/composites/clean-space
 
       - name: set env variables
+        env:
+          # Read-write commercial credentials, deliberately blank on pull requests so that
+          # forked PRs fall back to the read-only secrets. The composite picks whichever
+          # pair is populated and exports COMMERCIAL_ARTIFACTORY_USERNAME/PASSWORD, which
+          # release-ci-settings.xml interpolates to reach commercial Artifactory.
+          PASSWORD: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_PASSWORD || '' }}
+          USERNAME: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_USERNAME || '' }}
+          RO_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD || secrets.ARTIFACTORY_RO_PASSWORD }}
+          RO_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME || secrets.ARTIFACTORY_RO_USERNAME }}
         uses: ./.github/workflows/composites/env-variables
 
       - name: setup project jdk
@@ -232,6 +250,15 @@ jobs:
         uses: ./.github/workflows/composites/clean-space
 
       - name: set env variables
+        env:
+          # Read-write commercial credentials, deliberately blank on pull requests so that
+          # forked PRs fall back to the read-only secrets. The composite picks whichever
+          # pair is populated and exports COMMERCIAL_ARTIFACTORY_USERNAME/PASSWORD, which
+          # release-ci-settings.xml interpolates to reach commercial Artifactory.
+          PASSWORD: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_PASSWORD || '' }}
+          USERNAME: ${{ github.event_name != 'pull_request' && secrets.COMMERCIAL_ARTIFACTORY_USERNAME || '' }}
+          RO_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD || secrets.ARTIFACTORY_RO_PASSWORD }}
+          RO_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME || secrets.ARTIFACTORY_RO_USERNAME }}
         uses: ./.github/workflows/composites/env-variables
 
       - name: setup project jdk
