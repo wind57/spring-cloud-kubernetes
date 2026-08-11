@@ -40,3 +40,30 @@ runs:
           echo "MAVEN_SETTINGS=" >> $GITHUB_ENV
           echo "Maven settings: none found, using Maven defaults"
         fi
+
+        # Artifactory credentials for the settings file selected above.
+        #
+        # release-ci-settings.xml resolves its <server> entries from
+        # ${env.COMMERCIAL_ARTIFACTORY_USERNAME} / ${env.COMMERCIAL_ARTIFACTORY_PASSWORD},
+        # so those must exist in the environment or every request to commercial
+        # Artifactory is unauthenticated and fails with a 401.
+        #
+        # PASSWORD/USERNAME are the read-write commercial secrets and are empty on pull
+        # requests (and in OSS repos, where the secrets do not exist), in which case the
+        # read-only secrets are used instead. Resolving dependencies only needs read
+        # access, so a PR build still works.
+        if [[ -z $PASSWORD ]]; then
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD is not set, using the read only secret"
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD=${RO_PASSWORD}" >> $GITHUB_ENV
+        else
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD is set"
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD=${PASSWORD}" >> $GITHUB_ENV
+        fi
+
+        if [[ -z $USERNAME ]]; then
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME is not set, using the read only secret"
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME=${RO_USERNAME}" >> $GITHUB_ENV
+        else
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME is set"
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME=${USERNAME}" >> $GITHUB_ENV
+        fi
