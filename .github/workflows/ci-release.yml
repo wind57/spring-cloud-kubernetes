@@ -46,11 +46,17 @@ jobs:
     uses: spring-cloud/spring-cloud-github-actions/.github/workflows/deploy.yml@main
     with:
       branches: ${{ inputs.branches }}
+      # Tests are the 'test' job's responsibility, so this build only compiles and
+      # publishes. -DskipTests matters as much as -DskipITs: the two config modules
+      # alone account for over half an hour of surefire time.
+      #
+      # The SHOULD_DEPLOY guard keeps the non-primary JDK legs from repeating the
+      # deploy - without it every JDK in the matrix publishes the same snapshot.
       custom_build_command: |
-        if [[ "$SHOULD_DEPLOY" == "true" ]]; then                                                                                                                                        
-          ./mvnw clean deploy $DEPLOY_PROFILES -B -U $MAVEN_FLAGS $MAVEN_SETTINGS $MAVEN_DEPLOY_FLAGS -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true              
-        else                                                                                                                                                                             
-          ./mvnw clean install -Pspring -B -U $MAVEN_FLAGS $MAVEN_SETTINGS -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true                                         
+        if [[ "$SHOULD_DEPLOY" == "true" ]]; then
+          ./mvnw clean deploy $DEPLOY_PROFILES -B -U $MAVEN_FLAGS $MAVEN_SETTINGS $MAVEN_DEPLOY_FLAGS -DskipTests -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true
+        else
+          echo "Not the deploying JDK - the 'test' job covers this branch"
         fi
       runs_on: ubuntu22-2-8
       # Deploy only, no tests, so the default hour is ample.
