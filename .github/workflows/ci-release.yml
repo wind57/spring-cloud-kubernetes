@@ -1,18 +1,20 @@
 name: Spring Cloud CI Job (Commercial Release Branch)
 
-# Two independent halves, run in parallel:
+# Deliberately the same shape as ci.yaml: everything is delegated to maven.yaml, which
+# runs the sharded test suite and then deploys from its own deploy job, gated on
+# all-tests-passed. Snapshots are published only after the tests are green.
 #
-#   test   - delegates to this branch's own maven.yaml, which shards the test suite
-#            across many runners. It resolves -INTERNAL-SNAPSHOT dependencies from
-#            commercial Artifactory because the composites pick up
-#            release-ci-settings.xml via MAVEN_SETTINGS and the credentials the
-#            env-variables composite exports. It does not deploy.
+# The only commercial difference is the deployment target, and that needs nothing here:
+# deploy.yml detects release-ci-settings.xml on the branch and sets MAVEN_SETTINGS and
+# MAVEN_DEPLOY_FLAGS, which redirect the upload to the commercial snapshot repository.
 #
-#   deploy - publishes the internal snapshots and skips all tests, so snapshots are
-#            available in minutes rather than being gated on the full test suite.
-#
-# Neither job depends on the other, so a slow or failing test run does not hold up
-# publishing, and the test result is still visible on the commit.
+# The two inputs that are not defaults:
+#   runs-on   - commercial Artifactory only accepts spring-enterprise-builds runners and
+#               answers anything else with a 403, whatever credentials are supplied
+#   build-docs - this branch carries -INTERNAL-SNAPSHOT versions until release-train-ready
+#               stamps the release versions, and the antora-component-version plugin strips
+#               only -SNAPSHOT, producing e.g. 5.0.3-INTERNAL, which
+#               @springio/antora-extensions cannot parse
 
 on:
   workflow_dispatch:
@@ -31,46 +33,12 @@ permissions:
   contents: read
 
 jobs:
-  # Full sharded test suite. Integration tests and image builds are governed by
-  # maven.yaml itself; nothing is skipped here.
-  test:
+  build-and-test:
     uses: ./.github/workflows/maven.yaml
     with:
       branch: 5.0.x-internal
       jdk-version: '17'
-      should-deploy: false
+      should-deploy: true
       runs-on: ubuntu22-2-8
+      build-docs: false
     secrets: inherit
-
-  deploy:
-    uses: spring-cloud/spring-cloud-github-actions/.github/workflows/deploy.yml@main
-    with:
-      branches: ${{ inputs.branches }}
-      # Tests are the 'test' job's responsibility, so this build only compiles and
-      # publishes. -DskipTests matters as much as -DskipITs: the two config modules
-      # alone account for over half an hour of surefire time.
-      #
-      # The SHOULD_DEPLOY guard keeps the non-primary JDK legs from repeating the
-      # deploy - without it every JDK in the matrix publishes the same snapshot.
-      custom_build_command: |
-        if [[ "$SHOULD_DEPLOY" == "true" ]]; then
-          ./mvnw clean deploy $DEPLOY_PROFILES -B -U $MAVEN_FLAGS $MAVEN_SETTINGS $MAVEN_DEPLOY_FLAGS -DskipTests -DskipITs -Dskip.build.image=true -Dspring-boot.build-image.skip=true
-        else
-          echo "Not the deploying JDK - the 'test' job covers this branch"
-        fi
-      runs_on: ubuntu22-2-8
-      # Deploy only, no tests, so the default hour is ample.
-      timeout_minutes: 60
-      # The branches this workflow builds carry -INTERNAL-SNAPSHOT versions until
-      # release-train-ready stamps the release versions. The antora-component-version
-      # plugin derives the component version by stripping only -SNAPSHOT, producing
-      # e.g. 5.0.3-INTERNAL, which @springio/antora-extensions cannot parse. Building
-      # the docs profile would fail, so it is disabled here.
-      build_docs: false
-    secrets:
-      ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
-      ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
-      COMMERCIAL_ARTIFACTORY_USERNAME: ${{ secrets.COMMERCIAL_ARTIFACTORY_USERNAME }}
-      COMMERCIAL_ARTIFACTORY_PASSWORD: ${{ secrets.COMMERCIAL_ARTIFACTORY_PASSWORD }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
