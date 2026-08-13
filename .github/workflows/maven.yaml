@@ -26,6 +26,11 @@ on:
         required: false
         default: 'false'
         type: string
+      runs-on:
+        description: "Runner label for the jobs that run Maven"
+        required: false
+        default: 'ubuntu-latest'
+        type: string
   # Allow calls from ci.yaml
   workflow_call:
     inputs:
@@ -41,11 +46,21 @@ on:
         description: "Whether to run deployment after tests pass"
         required: true
         type: boolean
+      runs-on:
+        description: >
+          Runner label for the jobs that run Maven. Defaults to ubuntu-latest, which is
+          correct for open source builds. Commercial branches must pass a runner from the
+          spring-enterprise-builds group, because commercial Artifactory only accepts
+          requests from those runners and answers anything else with a 403 no matter what
+          credentials are supplied.
+        required: false
+        default: 'ubuntu-latest'
+        type: string
 
 jobs:
   build:
     name: Build (${{ inputs.branch || github.ref_name }} with JDK ${{ inputs.jdk-version || '17' }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
     env:
       # this might get set to true if there is an existing cache of test times
       # this happens in 'matrix-bounds-on-test-times-cache-hit'
@@ -155,7 +170,7 @@ jobs:
   test_when_cache_present:
     name: Test with cache (runner ${{ matrix.current_index }})
     needs: [ build ]
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
     env:
       SEGMENT_DOWNLOAD_TIMEOUT_MINS: 30
       JDK_VERSION: ${{ inputs.jdk-version || '17' }}
@@ -223,7 +238,7 @@ jobs:
   test_when_cache_missing:
     name: Test without cache (runner ${{ matrix.current_index }})
     needs: [ build ]
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on || 'ubuntu-latest' }}
     env:
       SEGMENT_DOWNLOAD_TIMEOUT_MINS: 30
       JDK_VERSION: ${{ inputs.jdk-version || '17' }}
