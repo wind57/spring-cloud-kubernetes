@@ -52,18 +52,29 @@ runs:
         # requests (and in OSS repos, where the secrets do not exist), in which case the
         # read-only secrets are used instead. Resolving dependencies only needs read
         # access, so a PR build still works.
-        if [[ -z $PASSWORD ]]; then
-          echo "COMMERCIAL_ARTIFACTORY_PASSWORD is not set, using the read only secret"
-          echo "COMMERCIAL_ARTIFACTORY_PASSWORD=${RO_PASSWORD}" >> $GITHUB_ENV
-        else
+        #
+        # This composite is invoked more than once per job: the workflow calls it, and so
+        # does pre-test-actions. Only the workflow's call receives the credentials, so the
+        # nested call must not overwrite what the first one established - doing so replaces
+        # the read-write credentials with the read-only ones and every subsequent request to
+        # commercial Artifactory fails with a 401. Hence values already in the environment
+        # are preserved, and the read-only fallback applies only when nothing is set yet.
+        if [[ -n $PASSWORD ]]; then
           echo "COMMERCIAL_ARTIFACTORY_PASSWORD is set"
           echo "COMMERCIAL_ARTIFACTORY_PASSWORD=${PASSWORD}" >> $GITHUB_ENV
+        elif [[ -n $COMMERCIAL_ARTIFACTORY_PASSWORD ]]; then
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD already set earlier in this job, keeping it"
+        else
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD is not set, using the read only secret"
+          echo "COMMERCIAL_ARTIFACTORY_PASSWORD=${RO_PASSWORD}" >> $GITHUB_ENV
         fi
 
-        if [[ -z $USERNAME ]]; then
-          echo "COMMERCIAL_ARTIFACTORY_USERNAME is not set, using the read only secret"
-          echo "COMMERCIAL_ARTIFACTORY_USERNAME=${RO_USERNAME}" >> $GITHUB_ENV
-        else
+        if [[ -n $USERNAME ]]; then
           echo "COMMERCIAL_ARTIFACTORY_USERNAME is set"
           echo "COMMERCIAL_ARTIFACTORY_USERNAME=${USERNAME}" >> $GITHUB_ENV
+        elif [[ -n $COMMERCIAL_ARTIFACTORY_USERNAME ]]; then
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME already set earlier in this job, keeping it"
+        else
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME is not set, using the read only secret"
+          echo "COMMERCIAL_ARTIFACTORY_USERNAME=${RO_USERNAME}" >> $GITHUB_ENV
         fi
