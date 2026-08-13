@@ -31,6 +31,11 @@ on:
         required: false
         default: 'ubuntu-latest'
         type: string
+      build-docs:
+        description: "Whether the deploy build includes the docs profile"
+        required: false
+        default: true
+        type: boolean
   # Allow calls from ci.yaml
   workflow_call:
     inputs:
@@ -52,10 +57,16 @@ on:
           correct for open source builds. Commercial branches must pass a runner from the
           spring-enterprise-builds group, because commercial Artifactory only accepts
           requests from those runners and answers anything else with a 403 no matter what
-          credentials are supplied.
+          credentials are supplied. Also used for the deploy job.
         required: false
         default: 'ubuntu-latest'
         type: string
+      build-docs:
+        description: >
+          Whether the deploy build includes the docs profile.
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   build:
@@ -379,9 +390,13 @@ jobs:
     with:
       trigger_ci_on_non_default_branches: false
       branches: ${{ inputs.branch }}
+      # Commercial branches must deploy from a spring-enterprise-builds runner, the same as
+      # the jobs above; commercial Artifactory rejects anything else with a 403.
+      runs_on: ${{ inputs.runs-on }}
+      # MAVEN_SETTINGS and MAVEN_DEPLOY_FLAGS are set by deploy.yml. 
       custom_build_command: |
         if [[ "$SHOULD_DEPLOY" == "true" ]]; then
-          ./mvnw $MAVEN_SETTINGS clean deploy -Pspring,docs -DskipTests -DskipITs -Dspring-boot.build-image.skip=true -B -U $MAVEN_DEPLOY_FLAGS
+          ./mvnw $MAVEN_SETTINGS clean deploy -Pspring${{ inputs.build-docs && ',docs' || '' }} -DskipTests -DskipITs -Dspring-boot.build-image.skip=true -B -U $MAVEN_DEPLOY_FLAGS
         else
           echo "Will not deploy artifacts"
         fi
