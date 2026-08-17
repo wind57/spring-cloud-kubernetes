@@ -142,14 +142,16 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 		// In HA mode, defer informer startup until this instance acquires leadership.
 		// The leader callback restores the persisted state and then starts the informers.
 		if (!haEnabled) {
-			start();
+			start(Map.of());
 		}
 	}
 
-	public final void start() {
+	public final void start(Map<String, String> storedResourceVersions) {
 		if (running || !monitoringSecrets) {
 			return;
 		}
+		InformerResourceVersionResolver resourceVersionResolver = new InformerResourceVersionResolver(
+				storedResourceVersions, haEnabled);
 		LOG.info(() -> "Kubernetes event-based secrets change detector activated");
 
 		Map<String, String> labelSelector;
@@ -169,16 +171,15 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1Secret> informer;
-
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
 			informer = factory
-					.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedSecret(namespace)
-						.timeoutSeconds(params.timeoutSeconds)
-						.resourceVersion(params.resourceVersion)
-						.watch(params.watch)
-						.labelSelector(labelSelector(labelSelector))
-						.buildCall(null), V1Secret.class, V1SecretList.class);
+				.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedSecret(namespace)
+					.timeoutSeconds(params.timeoutSeconds)
+					.resourceVersion(resourceVersionResolver.resolve(namespace, params.resourceVersion))
+					.watch(params.watch)
+					.labelSelector(labelSelector(labelSelector))
+					.buildCall(null), V1Secret.class, V1SecretList.class);
 
 			LOG.debug(() -> "secret informer for namespace : " + namespace + " with filter : " + secretsLabels);
 

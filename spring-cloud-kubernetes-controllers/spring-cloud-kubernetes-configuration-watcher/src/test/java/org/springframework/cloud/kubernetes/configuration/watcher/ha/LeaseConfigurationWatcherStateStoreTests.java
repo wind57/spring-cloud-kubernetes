@@ -58,9 +58,9 @@ class LeaseConfigurationWatcherStateStoreTests {
 	private static final String LEASE_COLLECTION_URL = "/apis/coordination.k8s.io/v1/namespaces/" + LEASE_NAMESPACE
 			+ "/leases";
 
-	private static final String CONFIGMAP_RESOURCE_VERSION_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher.configmap-resource-version";
+	private static final String CONFIGMAP_RESOURCE_VERSION_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher/configmap-resource-version";
 
-	private static final String SECRET_RESOURCE_VERSION_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher.secret-resource-version";
+	private static final String SECRET_RESOURCE_VERSION_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher/secret-resource-version";
 
 	private static WireMockServer wireMockServer;
 
@@ -103,8 +103,8 @@ class LeaseConfigurationWatcherStateStoreTests {
 
 		ConfigurationWatcherState state = stateStore.readOrCreate();
 
-		assertThat(state.configMapResourceVersion()).isEqualTo(configMapResourceVersion);
-		assertThat(state.secretResourceVersion()).isEqualTo(secretResourceVersion);
+		assertThat(state.configMapResourceVersions()).containsEntry(LEASE_NAMESPACE, configMapResourceVersion);
+		assertThat(state.secretResourceVersions()).containsEntry(LEASE_NAMESPACE, secretResourceVersion);
 		wireMockServer.verify(getRequestedFor(urlEqualTo(LEASE_URL)));
 	}
 
@@ -150,15 +150,15 @@ class LeaseConfigurationWatcherStateStoreTests {
 		stubFor(get(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(200).withBody(serialize(existingLease))));
 		stubFor(put(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(200).withBody(serialize(updatedLease))));
 
-		stateStore.write(new ConfigurationWatcherState(configMapResourceVersion, null));
+		stateStore.writeConfigMapResourceVersion(LEASE_NAMESPACE, configMapResourceVersion);
 
 		wireMockServer.verify(getRequestedFor(urlEqualTo(LEASE_URL)));
 		wireMockServer.verify(putRequestedFor(urlEqualTo(LEASE_URL))
 			.withRequestBody(
 					matchingJsonPath("$.metadata.annotations." + jsonPath(CONFIGMAP_RESOURCE_VERSION_ANNOTATION),
-							equalTo(configMapResourceVersion)))
+							equalTo(LEASE_NAMESPACE + "=" + configMapResourceVersion)))
 			.withRequestBody(matchingJsonPath("$.metadata.annotations." + jsonPath(SECRET_RESOURCE_VERSION_ANNOTATION),
-					equalTo(existingSecretResourceVersion))));
+					equalTo(LEASE_NAMESPACE + "=" + existingSecretResourceVersion))));
 	}
 
 	/**
@@ -188,7 +188,8 @@ class LeaseConfigurationWatcherStateStoreTests {
 		stubFor(post(urlEqualTo(LEASE_COLLECTION_URL)).willReturn(aResponse().withStatus(500).withBody("boom")));
 
 		assertThatThrownBy(() -> stateStore.readOrCreate()).isInstanceOf(IllegalStateException.class)
-			.hasMessage("Failed to create watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
+			.hasMessage(
+					"Failed to create watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
 	}
 
 	/**
@@ -208,7 +209,7 @@ class LeaseConfigurationWatcherStateStoreTests {
 		stubFor(get(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(200).withBody(serialize(existingLease))));
 		stubFor(put(urlEqualTo(LEASE_URL)).willReturn(aResponse().withStatus(500).withBody("boom")));
 
-		assertThatThrownBy(() -> stateStore.write(new ConfigurationWatcherState(configMapResourceVersion, null)))
+		assertThatThrownBy(() -> stateStore.writeConfigMapResourceVersion(LEASE_NAMESPACE, configMapResourceVersion))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessage("Failed to write watcher HA lease '" + LEASE_NAME + "' in namespace '" + LEASE_NAMESPACE + "'");
 	}
@@ -216,10 +217,10 @@ class LeaseConfigurationWatcherStateStoreTests {
 	private static V1Lease leaseWithAnnotations(String configMapResourceVersion, String secretResourceVersion) {
 		Map<String, String> annotations = new HashMap<>();
 		if (configMapResourceVersion != null) {
-			annotations.put(CONFIGMAP_RESOURCE_VERSION_ANNOTATION, configMapResourceVersion);
+			annotations.put(CONFIGMAP_RESOURCE_VERSION_ANNOTATION, LEASE_NAMESPACE + "=" + configMapResourceVersion);
 		}
 		if (secretResourceVersion != null) {
-			annotations.put(SECRET_RESOURCE_VERSION_ANNOTATION, secretResourceVersion);
+			annotations.put(SECRET_RESOURCE_VERSION_ANNOTATION, LEASE_NAMESPACE + "=" + secretResourceVersion);
 		}
 		return new V1Lease()
 			.metadata(new V1ObjectMeta().name(LEASE_NAME).namespace(LEASE_NAMESPACE).annotations(annotations));

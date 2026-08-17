@@ -26,6 +26,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.cloud.CloudPlatform;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
+import org.springframework.cloud.kubernetes.commons.leader.election.ConditionalOnLeaderElectionEnabled;
 import org.springframework.cloud.kubernetes.configuration.watcher.ConfigurationWatcherConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,14 +34,16 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Configures the components required for configuration watcher HA.
  *
- * <p>Creates the persistent state store and the coordinator that starts and stops
- * the watchers when leadership changes.
+ * <p>
+ * Creates the persistent state store and the coordinator that starts and stops the
+ * watchers when leadership changes.
  *
  * @author wind57
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnCloudPlatform(CloudPlatform.KUBERNETES)
 @ConditionalOnConfigurationWatcherHAEnabled
+@ConditionalOnLeaderElectionEnabled
 @ConditionalOnBean(ApiClient.class)
 class ConfigurationWatcherHAAutoConfiguration {
 
@@ -55,8 +58,9 @@ class ConfigurationWatcherHAAutoConfiguration {
 	@ConditionalOnMissingBean
 	ConfigurationWatcherHACoordinator configurationWatcherHACoordinator(
 			ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector,
-			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector) {
-		return new ConfigurationWatcherHACoordinator(configMapDetector, secretsDetector);
+			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector,
+			ConfigurationWatcherStateStore stateStore) {
+		return new ConfigurationWatcherHACoordinator(configMapDetector, secretsDetector, stateStore);
 	}
 
 }

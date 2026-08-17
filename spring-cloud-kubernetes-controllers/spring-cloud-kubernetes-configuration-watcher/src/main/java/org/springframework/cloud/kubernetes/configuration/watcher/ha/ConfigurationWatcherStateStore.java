@@ -23,8 +23,20 @@ package org.springframework.cloud.kubernetes.configuration.watcher.ha;
  */
 sealed interface ConfigurationWatcherStateStore permits LeaseConfigurationWatcherStateStore {
 
+	/**
+	 * Reads or creates the single persisted state used by the configuration watcher.
+	 *
+	 * <p>
+	 * When HA is enabled, the leader calls this once before starting the ConfigMap and
+	 * Secret informers. The returned state contains checkpoints for all configured
+	 * namespaces, so this method must not be called once per namespace. It may be called
+	 * again if a later leadership acquisition starts the watcher again.
+	 * @return the persisted state, or an empty state when no checkpoint exists
+	 */
 	ConfigurationWatcherState readOrCreate();
 
-	void write(ConfigurationWatcherState state);
+	void writeConfigMapResourceVersion(String namespace, String resourceVersion);
+
+	void writeSecretResourceVersion(String namespace, String resourceVersion);
 
 }

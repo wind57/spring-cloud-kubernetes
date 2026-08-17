@@ -39,29 +39,34 @@ public final class ConfigurationWatcherHACoordinator {
 
 	private final ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector;
 
+	private final ConfigurationWatcherStateStore stateStore;
+
 	public ConfigurationWatcherHACoordinator(
 			ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector,
-			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector) {
+			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector,
+			ConfigurationWatcherStateStore stateStore) {
 		if (configMapDetector.getIfAvailable() == null && secretsDetector.getIfAvailable() == null) {
-			throw new IllegalStateException("Configuration watcher HA is enabled, but neither ConfigMap nor Secret "
-					+ "watching is enabled");
+			throw new IllegalStateException(
+					"Configuration watcher HA is enabled, but neither ConfigMap nor Secret " + "watching is enabled");
 		}
 		this.configMapDetector = configMapDetector;
 		this.secretsDetector = secretsDetector;
+		this.stateStore = stateStore;
 	}
 
 	@EventListener
 	void onStartLeading(StartLeadingEvent event) {
-		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() +
-			" became leader at : " + Instant.ofEpochMilli(event.getTimestamp()));
-		configMapDetector.ifAvailable(KubernetesClientEventBasedConfigMapChangeDetector::start);
-		secretsDetector.ifAvailable(KubernetesClientEventBasedSecretsChangeDetector::start);
+		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() + " became leader at : "
+				+ Instant.ofEpochMilli(event.getTimestamp()));
+		ConfigurationWatcherState state = stateStore.readOrCreate();
+		configMapDetector.ifAvailable(detector -> detector.start(state.configMapResourceVersions()));
+		secretsDetector.ifAvailable(detector -> detector.start(state.secretResourceVersions()));
 	}
 
 	@EventListener
 	void onStopLeading(StopLeadingEvent event) {
-		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() +
-			" stopped being a leader at : " + Instant.ofEpochMilli(event.getTimestamp()));
+		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity()
+				+ " stopped being a leader at : " + Instant.ofEpochMilli(event.getTimestamp()));
 		secretsDetector.ifAvailable(KubernetesClientEventBasedSecretsChangeDetector::stop);
 		configMapDetector.ifAvailable(KubernetesClientEventBasedConfigMapChangeDetector::stop);
 	}

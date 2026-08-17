@@ -16,15 +16,19 @@
 
 package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
+import java.util.Map;
+
 /**
  * Persisted HA watcher state.
  *
- * @param configMapResourceVersion last processed configmap resource version
- * @param secretResourceVersion last processed secret resource version
+ * @param configMapResourceVersions last processed ConfigMap resource version per
+ * namespace
+ * @param secretResourceVersions last processed Secret resource version per namespace
  * @author wind57
  */
-record ConfigurationWatcherState(String configMapResourceVersion, String secretResourceVersion) {
+record ConfigurationWatcherState(Map<String, String> configMapResourceVersions,
+		Map<String, String> secretResourceVersions) {
 
-	static final ConfigurationWatcherState EMPTY = new ConfigurationWatcherState(null, null);
+	static final ConfigurationWatcherState EMPTY = new ConfigurationWatcherState(Map.of(), Map.of());
 
 }

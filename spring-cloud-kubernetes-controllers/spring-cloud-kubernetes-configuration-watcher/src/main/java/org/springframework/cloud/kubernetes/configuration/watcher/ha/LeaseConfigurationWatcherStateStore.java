@@ -17,7 +17,9 @@
 package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import io.kubernetes.client.openapi.ApiException;
 import io.kubernetes.client.openapi.apis.CoordinationV1Api;
@@ -41,59 +43,67 @@ final class LeaseConfigurationWatcherStateStore implements ConfigurationWatcherS
 
 	private static final LogAccessor LOG = new LogAccessor(LeaseConfigurationWatcherStateStore.class);
 
-	private static final String CONFIGMAP_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher.configmap-resource-version";
+	private static final String CONFIGMAP_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher/configmap-resource-version";
 
-	private static final String SECRET_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher.secret-resource-version";
+	private static final String SECRET_ANNOTATION = "spring.cloud.kubernetes.configuration.watcher/secret-resource-version";
 
 	private final CoordinationV1Api api;
 
-	private final ConfigurationWatcherHaProperties properties;
+	private final String leaseName;
+
+	private final String leaseNamespace;
 
 	LeaseConfigurationWatcherStateStore(CoordinationV1Api api, ConfigurationWatcherHaProperties properties) {
 		this.api = api;
-		this.properties = properties;
+		this.leaseName = properties.getLeaseName();
+		String configuredLeaseNamespace = properties.getLeaseNamespace();
+		this.leaseNamespace = StringUtils.hasText(configuredLeaseNamespace) ? configuredLeaseNamespace : "default";
 	}
 
 	@Override
 	public ConfigurationWatcherState readOrCreate() {
 
-		String leaseName = properties.getLeaseName();
-		String leaseNamespace = namespace();
-		LOG.debug("Reading lease with name: " + leaseName + " in namespace: " + leaseNamespace);
+		LOG.debug(() -> "Reading lease with name: " + leaseName + " in namespace: " + leaseNamespace);
 
 		try {
 			V1Lease lease = api.readNamespacedLease(leaseName, leaseNamespace).execute();
 			Map<String, String> annotations = existingAnnotations(lease);
-			return new ConfigurationWatcherState(annotations.get(CONFIGMAP_ANNOTATION),
-					annotations.get(SECRET_ANNOTATION));
+			return new ConfigurationWatcherState(parseResourceVersions(annotations.get(CONFIGMAP_ANNOTATION)),
+					parseResourceVersions(annotations.get(SECRET_ANNOTATION)));
 		}
 		catch (ApiException e) {
 			if (e.getCode() == 404) {
 				createLease(leaseName, leaseNamespace);
 				return ConfigurationWatcherState.EMPTY;
 			}
-			throw new IllegalStateException("Failed to read watcher HA lease '" + properties.getLeaseName()
-					+ "' in namespace '" + leaseNamespace + "'", e);
+			throw new IllegalStateException(
+					"Failed to read watcher HA lease '" + leaseName + "' in namespace '" + leaseNamespace + "'", e);
 		}
 	}
 
 	@Override
-	public void write(ConfigurationWatcherState state) {
+	public void writeConfigMapResourceVersion(String namespace, String resourceVersion) {
+		writeResourceVersion(CONFIGMAP_ANNOTATION, namespace, resourceVersion);
+	}
+
+	@Override
+	public void writeSecretResourceVersion(String namespace, String resourceVersion) {
+		writeResourceVersion(SECRET_ANNOTATION, namespace, resourceVersion);
+	}
+
+	private void writeResourceVersion(String annotation, String namespace, String resourceVersion) {
 		try {
 
-			String leaseName = properties.getLeaseName();
-			String leaseNamespace = namespace();
-			LOG.debug("Updating lease with name: " + leaseName + " in namespace: " + leaseNamespace);
+			LOG.debug(() -> "Updating lease with name: " + leaseName + " in namespace: " + leaseNamespace);
 
 			V1Lease currentLease = api.readNamespacedLease(leaseName, leaseNamespace).execute();
-			// add the annotations
-			V1Lease updatedLease = updatedLease(currentLease, state);
+			V1Lease updatedLease = updatedLease(currentLease, annotation, namespace, resourceVersion);
 			api.replaceNamespacedLease(leaseName, leaseNamespace, updatedLease).execute();
 		}
 		catch (ApiException e) {
 			LOG.error(e, () -> "Failed to write to the lease because : " + e.getResponseBody());
-			throw new IllegalStateException("Failed to write watcher HA lease '" + properties.getLeaseName()
-					+ "' in namespace '" + namespace() + "'", e);
+			throw new IllegalStateException(
+					"Failed to write watcher HA lease '" + leaseName + "' in namespace '" + leaseNamespace + "'", e);
 		}
 	}
 
@@ -104,15 +114,19 @@ final class LeaseConfigurationWatcherStateStore implements ConfigurationWatcherS
 		}
 		catch (ApiException e) {
 			LOG.error(e, () -> "Failed to create watcher HA lease '" + e.getResponseBody());
-			throw new IllegalStateException("Failed to create watcher HA lease '" + properties.getLeaseName()
-					+ "' in namespace '" + namespace() + "'", e);
+			throw new IllegalStateException(
+					"Failed to create watcher HA lease '" + leaseName + "' in namespace '" + leaseNamespace + "'", e);
 		}
 	}
 
-	private V1Lease updatedLease(V1Lease lease, ConfigurationWatcherState state) {
+	private V1Lease updatedLease(V1Lease lease, String annotation, String namespace, String resourceVersion) {
 		V1ObjectMeta metadata = lease.getMetadata();
 		Map<String, String> currentLeaseAnnotations = existingAnnotations(lease);
-		metadata.setAnnotations(updateAnnotations(currentLeaseAnnotations, state));
+		Map<String, String> updatedAnnotations = new HashMap<>(currentLeaseAnnotations);
+		Map<String, String> resourceVersions = parseResourceVersions(updatedAnnotations.get(annotation));
+		resourceVersions.put(namespace, resourceVersion);
+		updatedAnnotations.put(annotation, serializeResourceVersions(resourceVersions));
+		metadata.setAnnotations(updatedAnnotations);
 		return lease;
 	}
 
@@ -131,26 +145,28 @@ final class LeaseConfigurationWatcherStateStore implements ConfigurationWatcherS
 		return lease.getMetadata().getAnnotations();
 	}
 
-	private static Map<String, String> updateAnnotations(Map<String, String> existingAnnotations,
-			ConfigurationWatcherState state) {
-		Map<String, String> annotations = new HashMap<>(existingAnnotations);
-
-		String configMapResourceVersion = state.configMapResourceVersion();
-		if (configMapResourceVersion != null) {
-			annotations.put(CONFIGMAP_ANNOTATION, configMapResourceVersion);
-		}
-
-		String secretResourceVersion = state.secretResourceVersion();
-		if (secretResourceVersion != null) {
-			annotations.put(SECRET_ANNOTATION, secretResourceVersion);
-		}
-
-		return annotations;
+	private static String serializeResourceVersions(Map<String, String> resourceVersions) {
+		return resourceVersions.entrySet()
+			.stream()
+			.sorted(Map.Entry.comparingByKey())
+			.map(entry -> entry.getKey() + "=" + entry.getValue())
+			.collect(Collectors.joining(","));
 	}
 
-	private String namespace() {
-		String leaseNamespaceFromProperties = properties.getLeaseNamespace();
-		return StringUtils.hasText(leaseNamespaceFromProperties) ? leaseNamespaceFromProperties : "default";
+	private static Map<String, String> parseResourceVersions(String serializedResourceVersions) {
+		if (!StringUtils.hasText(serializedResourceVersions)) {
+			return Map.of();
+		}
+
+		Map<String, String> resourceVersions = new LinkedHashMap<>();
+		for (String entry : serializedResourceVersions.split(",")) {
+			String[] keyValue = entry.split("=", 2);
+			if (keyValue.length != 2) {
+				throw new IllegalStateException("Invalid ConfigMap resource version entry: " + entry);
+			}
+			resourceVersions.put(keyValue[0], keyValue[1]);
+		}
+		return resourceVersions;
 	}
 
 }

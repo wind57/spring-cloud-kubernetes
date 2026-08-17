@@ -16,10 +16,11 @@
 
 package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
+import java.util.Map;
+
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StartLeadingEvent;
@@ -28,6 +29,7 @@ import org.springframework.cloud.kubernetes.commons.leader.election.events.StopL
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * @author wind57
@@ -42,19 +44,23 @@ class ConfigurationWatcherHACoordinatorTests {
 		KubernetesClientEventBasedSecretsChangeDetector secretsDetector = mock(
 				KubernetesClientEventBasedSecretsChangeDetector.class);
 
-		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = provider(
-				KubernetesClientEventBasedConfigMapChangeDetector.class, configMapDetector);
+		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = mock(
+				ObjectProvider.class);
+		when(configMapProvider.getIfAvailable()).thenReturn(configMapDetector);
 
-		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = provider(
-				KubernetesClientEventBasedSecretsChangeDetector.class, secretsDetector);
+		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = mock(ObjectProvider.class);
+		when(secretsProvider.getIfAvailable()).thenReturn(secretsDetector);
+		ConfigurationWatcherStateStore stateStore = mock(ConfigurationWatcherStateStore.class);
+		when(stateStore.readOrCreate()).thenReturn(
+				new ConfigurationWatcherState(Map.of("default", "config-map-rv"), Map.of("default", "secret-rv")));
 
 		ConfigurationWatcherHACoordinator coordinator = new ConfigurationWatcherHACoordinator(configMapProvider,
-				secretsProvider);
+				secretsProvider, stateStore);
 
 		coordinator.onStartLeading(new StartLeadingEvent("candidate"));
 
-		verify(configMapDetector).start();
-		verify(secretsDetector).start();
+		verify(configMapDetector).start(Map.of("default", "config-map-rv"));
+		verify(secretsDetector).start(Map.of("default", "secret-rv"));
 	}
 
 	@Test
@@ -65,14 +71,16 @@ class ConfigurationWatcherHACoordinatorTests {
 		KubernetesClientEventBasedSecretsChangeDetector secretsDetector = mock(
 				KubernetesClientEventBasedSecretsChangeDetector.class);
 
-		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = provider(
-				KubernetesClientEventBasedConfigMapChangeDetector.class, configMapDetector);
+		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = mock(
+				ObjectProvider.class);
+		when(configMapProvider.getIfAvailable()).thenReturn(configMapDetector);
 
-		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = provider(
-				KubernetesClientEventBasedSecretsChangeDetector.class, secretsDetector);
+		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = mock(ObjectProvider.class);
+		when(secretsProvider.getIfAvailable()).thenReturn(secretsDetector);
+		ConfigurationWatcherStateStore stateStore = mock(ConfigurationWatcherStateStore.class);
 
 		ConfigurationWatcherHACoordinator coordinator = new ConfigurationWatcherHACoordinator(configMapProvider,
-				secretsProvider);
+				secretsProvider, stateStore);
 
 		coordinator.onStopLeading(new StopLeadingEvent("candidate"));
 
@@ -82,24 +90,16 @@ class ConfigurationWatcherHACoordinatorTests {
 
 	@Test
 	void failsWhenNeitherDetectorIsAvailable() {
-		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = emptyProvider(
-				KubernetesClientEventBasedConfigMapChangeDetector.class);
-		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = emptyProvider(
-				KubernetesClientEventBasedSecretsChangeDetector.class);
+		ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapProvider = mock(
+				ObjectProvider.class);
+		when(configMapProvider.getIfAvailable()).thenReturn(null);
+		ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsProvider = mock(ObjectProvider.class);
+		when(secretsProvider.getIfAvailable()).thenReturn(null);
+		ConfigurationWatcherStateStore stateStore = mock(ConfigurationWatcherStateStore.class);
 
-		assertThatThrownBy(() -> new ConfigurationWatcherHACoordinator(configMapProvider, secretsProvider))
+		assertThatThrownBy(() -> new ConfigurationWatcherHACoordinator(configMapProvider, secretsProvider, stateStore))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessage("Configuration watcher HA is enabled, but neither ConfigMap nor Secret watching is enabled");
-	}
-
-	private static <T> ObjectProvider<T> provider(Class<T> type, T value) {
-		DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-		beanFactory.registerSingleton("detector", value);
-		return beanFactory.getBeanProvider(type);
-	}
-
-	private static <T> ObjectProvider<T> emptyProvider(Class<T> type) {
-		return new DefaultListableBeanFactory().getBeanProvider(type);
 	}
 
 }

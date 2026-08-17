@@ -138,14 +138,16 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 		// In HA mode, defer informer startup until this instance acquires leadership.
 		// The leader callback restores the persisted state and then starts the informers.
 		if (!haEnabled) {
-			start();
+			start(Map.of());
 		}
 	}
 
-	public final void start() {
+	public final void start(Map<String, String> storedResourceVersions) {
 		if (running || !monitoringConfigMaps) {
 			return;
 		}
+		InformerResourceVersionResolver resourceVersionResolver = new InformerResourceVersionResolver(
+				storedResourceVersions, haEnabled);
 
 		LOG.info(() -> "Kubernetes event-based configMap change detector activated");
 
@@ -166,19 +168,18 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1ConfigMap> informer;
-
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
 			informer = factory
-					.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedConfigMap(namespace)
-						.timeoutSeconds(params.timeoutSeconds)
-						.resourceVersion(params.resourceVersion)
-						.watch(params.watch)
-						.labelSelector(labelSelector(labelSelector))
-						.buildCall(null), V1ConfigMap.class, V1ConfigMapList.class);
+				.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedConfigMap(namespace)
+					.timeoutSeconds(params.timeoutSeconds)
+					.resourceVersion(resourceVersionResolver.resolve(namespace, params.resourceVersion))
+					.watch(params.watch)
+					.labelSelector(labelSelector(labelSelector))
+					.buildCall(null), V1ConfigMap.class, V1ConfigMapList.class);
 
-			LOG.debug(() -> "added configmap informer for namespace : " + namespace + " with labels : "
-					+ labelSelector);
+			LOG.debug(
+					() -> "added configmap informer for namespace : " + namespace + " with labels : " + labelSelector);
 
 			informer.addEventHandler(handler);
 			informers.add(informer);
