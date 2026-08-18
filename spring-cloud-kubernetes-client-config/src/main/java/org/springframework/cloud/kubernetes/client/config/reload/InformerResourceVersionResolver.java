@@ -53,17 +53,26 @@ final class InformerResourceVersionResolver {
 	}
 
 	String resolve(String namespace, String informerResourceVersion) {
-		String checkpointResourceVersion = checkpointResourceVersions.get(namespace);
-		// If HA is not enabled, do not restore from a checkpoint.
-		// No persisted checkpoint exists when resourceVersion is null.
-		if (!haEnabled || checkpointResourceVersion == null) {
+
+		// if HA is not enabled, we do not restore from a checkpoint
+		if (!haEnabled) {
 			return informerResourceVersion;
 		}
 
-		// Consume the checkpoint once; subsequent versions come from the informer so it
-		// can progress.
-		if (checkpointResourceVersionConsumed.computeIfAbsent(namespace, ignored -> new AtomicBoolean())
-			.compareAndSet(false, true)) {
+		String checkpointResourceVersion = checkpointResourceVersions.get(namespace);
+		// there is no previous checkpoint ( maybe it's the first time app is started in
+		// HA mode)
+		if (checkpointResourceVersion == null) {
+			return informerResourceVersion;
+		}
+
+		// Consume the checkpoint only once.
+		// Subsequent versions come from the informer, so it can progress.
+		boolean checkpointNotConsumed = checkpointResourceVersionConsumed
+			.computeIfAbsent(namespace, ignored -> new AtomicBoolean())
+			.compareAndSet(false, true);
+
+		if (checkpointNotConsumed) {
 			LOG.info(() -> "replaying events in namespace " + namespace + " from resource version "
 					+ checkpointResourceVersion);
 			return checkpointResourceVersion;
