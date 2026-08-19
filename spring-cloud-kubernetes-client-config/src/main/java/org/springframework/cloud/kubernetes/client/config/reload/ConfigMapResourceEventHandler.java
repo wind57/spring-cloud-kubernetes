@@ -23,7 +23,6 @@ import io.kubernetes.client.informer.ResourceEventHandler;
 import io.kubernetes.client.openapi.models.V1ConfigMap;
 import io.kubernetes.client.openapi.models.V1ObjectMeta;
 import jakarta.annotation.Nullable;
-import org.apache.commons.logging.LogFactory;
 
 import org.springframework.core.log.LogAccessor;
 
@@ -32,7 +31,7 @@ import org.springframework.core.log.LogAccessor;
  */
 final class ConfigMapResourceEventHandler implements ResourceEventHandler<V1ConfigMap> {
 
-	private static final LogAccessor LOG = new LogAccessor(LogFactory.getLog(ConfigMapResourceEventHandler.class));
+	private static final LogAccessor LOG = new LogAccessor(ConfigMapResourceEventHandler.class);
 
 	private final Consumer<V1ConfigMap> onEvent;
 
@@ -77,8 +76,8 @@ final class ConfigMapResourceEventHandler implements ResourceEventHandler<V1Conf
 	private void writeResourceVersion(V1ConfigMap configMap) {
 		if (resourceVersionWriter != null) {
 			V1ObjectMeta metadata = configMap.getMetadata();
-			resourceVersionWriter.accept(new NamespaceAndResourceVersion(
-				metadata.getNamespace(), metadata.getResourceVersion()));
+			resourceVersionWriter
+				.accept(new NamespaceAndResourceVersion(metadata.getNamespace(), metadata.getResourceVersion()));
 		}
 	}
 

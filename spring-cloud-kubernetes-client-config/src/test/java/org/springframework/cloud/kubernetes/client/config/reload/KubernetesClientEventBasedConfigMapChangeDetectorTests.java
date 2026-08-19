@@ -277,8 +277,7 @@ class KubernetesClientEventBasedConfigMapChangeDetectorTests {
 		changeDetector.start(Map.of("default", "17"), writtenResourceVersions::add);
 
 		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1 && writtenResourceVersions.size() == 1);
-		assertThat(writtenResourceVersions)
-				.containsExactly(new NamespaceAndResourceVersion("default", "43"));
+		assertThat(writtenResourceVersions).containsExactly(new NamespaceAndResourceVersion("default", "43"));
 		verify(getRequestedFor(urlMatching("^/api/v1/namespaces/default/configmaps.*"))
 			.withQueryParam("watch", equalTo("false"))
 			.withQueryParam("resourceVersion", equalTo("17")));

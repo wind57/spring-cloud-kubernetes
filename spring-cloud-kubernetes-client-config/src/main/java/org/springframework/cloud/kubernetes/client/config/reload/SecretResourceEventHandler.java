@@ -21,29 +21,28 @@ import java.util.function.Consumer;
 import io.kubernetes.client.informer.ResourceEventHandler;
 import io.kubernetes.client.openapi.models.V1ObjectMeta;
 import io.kubernetes.client.openapi.models.V1Secret;
-
 import jakarta.annotation.Nullable;
+
 import org.springframework.core.log.LogAccessor;
 
 final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret> {
 
-	private final LogAccessor log;
+	private static final LogAccessor LOG = new LogAccessor(SecretResourceEventHandler.class);
 
 	private final Consumer<V1Secret> onEvent;
 
 	@Nullable
 	private final Consumer<NamespaceAndResourceVersion> resourceVersionWriter;
 
-	SecretResourceEventHandler(LogAccessor log, Consumer<V1Secret> onEvent,
+	SecretResourceEventHandler(Consumer<V1Secret> onEvent,
 			@Nullable Consumer<NamespaceAndResourceVersion> resourceVersionWriter) {
-		this.log = log;
 		this.onEvent = onEvent;
 		this.resourceVersionWriter = resourceVersionWriter;
 	}
 
 	@Override
 	public void onAdd(V1Secret secret) {
-		log.debug(() -> "Secret " + secret.getMetadata().getName() + " was added in namespace "
+		LOG.debug(() -> "Secret " + secret.getMetadata().getName() + " was added in namespace "
 				+ secret.getMetadata().getNamespace());
 		onEvent.accept(secret);
 		writeResourceVersion(secret);
@@ -51,11 +50,11 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 
 	@Override
 	public void onUpdate(V1Secret oldSecret, V1Secret newSecret) {
-		log.debug(() -> "Secret " + newSecret.getMetadata().getName() + " was updated in namespace "
+		LOG.debug(() -> "Secret " + newSecret.getMetadata().getName() + " was updated in namespace "
 				+ newSecret.getMetadata().getNamespace());
 
 		if (KubernetesClientEventBasedSecretsChangeDetector.equals(oldSecret.getData(), newSecret.getData())) {
-			log.debug(() -> "data in secret has not changed, will not reload");
+			LOG.debug(() -> "data in secret has not changed, will not reload");
 		}
 		else {
 			onEvent.accept(newSecret);
@@ -65,7 +64,7 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 
 	@Override
 	public void onDelete(V1Secret secret, boolean deletedFinalStateUnknown) {
-		log.debug(() -> "Secret " + secret.getMetadata().getName() + " was deleted in namespace "
+		LOG.debug(() -> "Secret " + secret.getMetadata().getName() + " was deleted in namespace "
 				+ secret.getMetadata().getNamespace());
 		onEvent.accept(secret);
 		writeResourceVersion(secret);
@@ -74,8 +73,8 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 	private void writeResourceVersion(V1Secret secret) {
 		if (resourceVersionWriter != null) {
 			V1ObjectMeta metadata = secret.getMetadata();
-			resourceVersionWriter.accept(new NamespaceAndResourceVersion(
-				metadata.getNamespace(), metadata.getResourceVersion()));
+			resourceVersionWriter
+				.accept(new NamespaceAndResourceVersion(metadata.getNamespace(), metadata.getResourceVersion()));
 		}
 	}
 

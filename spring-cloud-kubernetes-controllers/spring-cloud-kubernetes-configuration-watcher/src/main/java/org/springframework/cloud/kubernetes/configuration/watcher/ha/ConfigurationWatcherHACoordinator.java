@@ -60,10 +60,10 @@ public final class ConfigurationWatcherHACoordinator {
 		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() + " became leader at : "
 				+ Instant.ofEpochMilli(event.getTimestamp()));
 		ConfigurationWatcherState state = stateStore.readOrCreate();
-		configMapDetector.ifAvailable(detector -> detector.start(state.configMapResourceVersions(),
-				this::writeConfigMapResourceVersion));
-		secretsDetector.ifAvailable(detector -> detector.start(state.secretResourceVersions(),
-				this::writeSecretResourceVersion));
+		configMapDetector.ifAvailable(
+				detector -> detector.start(state.configMapResourceVersions(), this::writeConfigMapResourceVersion));
+		secretsDetector
+			.ifAvailable(detector -> detector.start(state.secretResourceVersions(), this::writeSecretResourceVersion));
 	}
 
 	private void writeConfigMapResourceVersion(NamespaceAndResourceVersion resourceVersion) {

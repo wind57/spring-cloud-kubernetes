@@ -277,7 +277,7 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 
 		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1 && writtenResourceVersions.size() == 1);
 		Assertions.assertThat(writtenResourceVersions)
-				.containsExactly(new NamespaceAndResourceVersion("default", "43"));
+			.containsExactly(new NamespaceAndResourceVersion("default", "43"));
 		verify(getRequestedFor(urlMatching("/api/v1/namespaces/default/secrets.*"))
 			.withQueryParam("watch", equalTo("false"))
 			.withQueryParam("resourceVersion", equalTo("17")));

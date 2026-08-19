@@ -143,8 +143,7 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1Secret> informer;
-			SecretResourceEventHandler handler = new SecretResourceEventHandler(LOG, this::onEvent,
-					resourceVersionWriter);
+			SecretResourceEventHandler handler = new SecretResourceEventHandler(this::onEvent, resourceVersionWriter);
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
 			informer = factory
