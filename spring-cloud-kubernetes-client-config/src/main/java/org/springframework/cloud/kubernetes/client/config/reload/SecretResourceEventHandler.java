@@ -19,8 +19,10 @@ package org.springframework.cloud.kubernetes.client.config.reload;
 import java.util.function.Consumer;
 
 import io.kubernetes.client.informer.ResourceEventHandler;
+import io.kubernetes.client.openapi.models.V1ObjectMeta;
 import io.kubernetes.client.openapi.models.V1Secret;
 
+import jakarta.annotation.Nullable;
 import org.springframework.core.log.LogAccessor;
 
 final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret> {
@@ -29,9 +31,14 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 
 	private final Consumer<V1Secret> onEvent;
 
-	SecretResourceEventHandler(LogAccessor log, Consumer<V1Secret> onEvent) {
+	@Nullable
+	private final Consumer<NamespaceAndResourceVersion> resourceVersionWriter;
+
+	SecretResourceEventHandler(LogAccessor log, Consumer<V1Secret> onEvent,
+			@Nullable Consumer<NamespaceAndResourceVersion> resourceVersionWriter) {
 		this.log = log;
 		this.onEvent = onEvent;
+		this.resourceVersionWriter = resourceVersionWriter;
 	}
 
 	@Override
@@ -39,6 +46,7 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 		log.debug(() -> "Secret " + secret.getMetadata().getName() + " was added in namespace "
 				+ secret.getMetadata().getNamespace());
 		onEvent.accept(secret);
+		writeResourceVersion(secret);
 	}
 
 	@Override
@@ -52,6 +60,7 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 		else {
 			onEvent.accept(newSecret);
 		}
+		writeResourceVersion(newSecret);
 	}
 
 	@Override
@@ -59,6 +68,15 @@ final class SecretResourceEventHandler implements ResourceEventHandler<V1Secret>
 		log.debug(() -> "Secret " + secret.getMetadata().getName() + " was deleted in namespace "
 				+ secret.getMetadata().getNamespace());
 		onEvent.accept(secret);
+		writeResourceVersion(secret);
+	}
+
+	private void writeResourceVersion(V1Secret secret) {
+		if (resourceVersionWriter != null) {
+			V1ObjectMeta metadata = secret.getMetadata();
+			resourceVersionWriter.accept(new NamespaceAndResourceVersion(
+				metadata.getNamespace(), metadata.getResourceVersion()));
+		}
 	}
 
 }

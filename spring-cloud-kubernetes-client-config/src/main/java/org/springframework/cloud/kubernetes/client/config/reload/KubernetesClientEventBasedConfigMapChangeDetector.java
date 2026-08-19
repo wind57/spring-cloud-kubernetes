@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import io.kubernetes.client.common.KubernetesObject;
 import io.kubernetes.client.informer.SharedIndexInformer;
@@ -29,6 +30,7 @@ import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1ConfigMap;
 import io.kubernetes.client.openapi.models.V1ConfigMapList;
 import io.kubernetes.client.util.CallGeneratorParams;
+import jakarta.annotation.Nullable;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
@@ -79,8 +81,6 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 	// informers already running (skip starting more informers)
 	private volatile boolean running;
 
-	private final ConfigMapResourceEventHandler handler = new ConfigMapResourceEventHandler(this::onEvent);
-
 	public KubernetesClientEventBasedConfigMapChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientConfigMapPropertySourceLocator propertySourceLocator,
@@ -109,11 +109,12 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 		// In HA mode, defer informer startup until this instance acquires leadership.
 		// The leader callback restores the persisted state and then starts the informers.
 		if (!haEnabled) {
-			start(Map.of());
+			start(Map.of(), null);
 		}
 	}
 
-	public final void start(Map<String, String> storedResourceVersions) {
+	public final void start(Map<String, String> storedResourceVersions,
+			@Nullable Consumer<NamespaceAndResourceVersion> resourceVersionWriter) {
 		if (running || !monitoringConfigMaps) {
 			return;
 		}
@@ -139,6 +140,8 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1ConfigMap> informer;
+			ConfigMapResourceEventHandler handler = new ConfigMapResourceEventHandler(this::onEvent,
+					resourceVersionWriter);
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
 			informer = factory

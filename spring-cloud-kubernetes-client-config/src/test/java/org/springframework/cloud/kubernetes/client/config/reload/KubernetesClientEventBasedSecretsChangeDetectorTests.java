@@ -17,6 +17,7 @@
 package org.springframework.cloud.kubernetes.client.config.reload;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -261,6 +262,7 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 		// ConfigReloadUtil calls the 'reloadProcedure' from below and we assert its
 		// invocation
 		ConfigurationUpdateStrategy strategy = new ConfigurationUpdateStrategy("strategy", () -> ++onEventCalls[0]);
+		List<NamespaceAndResourceVersion> writtenResourceVersions = new ArrayList<>();
 
 		ConfigReloadProperties properties = new ConfigReloadProperties(false, false, true,
 				ConfigReloadProperties.ReloadStrategy.REFRESH, ConfigReloadProperties.ReloadDetectionMode.EVENT,
@@ -271,9 +273,11 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 		KubernetesClientEventBasedSecretsChangeDetector changeDetector = new KubernetesClientEventBasedSecretsChangeDetector(
 				coreV1Api, environment, properties, strategy, locator, namespaceProvider, true);
 
-		changeDetector.start(Map.of("default", "17"));
+		changeDetector.start(Map.of("default", "17"), writtenResourceVersions::add);
 
-		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1);
+		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1 && writtenResourceVersions.size() == 1);
+		Assertions.assertThat(writtenResourceVersions)
+				.containsExactly(new NamespaceAndResourceVersion("default", "43"));
 		verify(getRequestedFor(urlMatching("/api/v1/namespaces/default/secrets.*"))
 			.withQueryParam("watch", equalTo("false"))
 			.withQueryParam("resourceVersion", equalTo("17")));
@@ -435,7 +439,7 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 
 		if (haEnabled) {
 			Assertions.assertThat(onEventCalls[0]).isZero();
-			changeDetector.start(Map.of());
+			changeDetector.start(Map.of(), null);
 		}
 
 		// all 4 events are caught

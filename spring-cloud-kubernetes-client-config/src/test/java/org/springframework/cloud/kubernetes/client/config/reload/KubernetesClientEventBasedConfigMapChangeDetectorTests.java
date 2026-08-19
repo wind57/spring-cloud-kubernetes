@@ -16,6 +16,7 @@
 
 package org.springframework.cloud.kubernetes.client.config.reload;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -265,6 +266,7 @@ class KubernetesClientEventBasedConfigMapChangeDetectorTests {
 		// ConfigReloadUtil calls the 'reloadProcedure' from below and we assert its
 		// invocation
 		ConfigurationUpdateStrategy strategy = new ConfigurationUpdateStrategy("strategy", () -> ++onEventCalls[0]);
+		List<NamespaceAndResourceVersion> writtenResourceVersions = new ArrayList<>();
 
 		KubernetesNamespaceProvider namespaceProvider = mock(KubernetesNamespaceProvider.class);
 		when(namespaceProvider.getNamespace()).thenReturn("default");
@@ -272,9 +274,11 @@ class KubernetesClientEventBasedConfigMapChangeDetectorTests {
 		KubernetesClientEventBasedConfigMapChangeDetector changeDetector = new KubernetesClientEventBasedConfigMapChangeDetector(
 				coreV1Api, environment, ConfigReloadProperties.DEFAULT, strategy, locator, namespaceProvider, true);
 
-		changeDetector.start(Map.of("default", "17"));
+		changeDetector.start(Map.of("default", "17"), writtenResourceVersions::add);
 
-		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1);
+		Awaitilities.awaitUntil(10, 1000, () -> onEventCalls[0] == 1 && writtenResourceVersions.size() == 1);
+		assertThat(writtenResourceVersions)
+				.containsExactly(new NamespaceAndResourceVersion("default", "43"));
 		verify(getRequestedFor(urlMatching("^/api/v1/namespaces/default/configmaps.*"))
 			.withQueryParam("watch", equalTo("false"))
 			.withQueryParam("resourceVersion", equalTo("17")));
@@ -318,7 +322,7 @@ class KubernetesClientEventBasedConfigMapChangeDetectorTests {
 
 		if (haEnabled) {
 			assertThat(onEventCalls[0]).isZero();
-			changeDetector.start(Map.of());
+			changeDetector.start(Map.of(), null);
 		}
 
 		// all 4 events are caught

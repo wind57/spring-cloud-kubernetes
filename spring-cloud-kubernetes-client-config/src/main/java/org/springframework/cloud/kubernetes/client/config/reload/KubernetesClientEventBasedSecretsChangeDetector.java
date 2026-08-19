@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import io.kubernetes.client.common.KubernetesObject;
 import io.kubernetes.client.informer.SharedIndexInformer;
@@ -31,6 +32,7 @@ import io.kubernetes.client.openapi.apis.CoreV1Api;
 import io.kubernetes.client.openapi.models.V1Secret;
 import io.kubernetes.client.openapi.models.V1SecretList;
 import io.kubernetes.client.util.CallGeneratorParams;
+import jakarta.annotation.Nullable;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.commons.logging.LogFactory;
@@ -83,8 +85,6 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 	// informers already running (skip starting more informers)
 	private volatile boolean running;
 
-	private final SecretResourceEventHandler handler = new SecretResourceEventHandler(LOG, this::onEvent);
-
 	public KubernetesClientEventBasedSecretsChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientSecretsPropertySourceLocator propertySourceLocator,
@@ -113,11 +113,12 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 		// In HA mode, defer informer startup until this instance acquires leadership.
 		// The leader callback restores the persisted state and then starts the informers.
 		if (!haEnabled) {
-			start(Map.of());
+			start(Map.of(), null);
 		}
 	}
 
-	public final void start(Map<String, String> storedResourceVersions) {
+	public final void start(Map<String, String> storedResourceVersions,
+			@Nullable Consumer<NamespaceAndResourceVersion> resourceVersionWriter) {
 		if (running || !monitoringSecrets) {
 			return;
 		}
@@ -142,6 +143,8 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1Secret> informer;
+			SecretResourceEventHandler handler = new SecretResourceEventHandler(LOG, this::onEvent,
+					resourceVersionWriter);
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
 			informer = factory

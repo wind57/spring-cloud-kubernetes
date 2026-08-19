@@ -21,6 +21,7 @@ import java.time.Instant;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
+import org.springframework.cloud.kubernetes.client.config.reload.NamespaceAndResourceVersion;
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StartLeadingEvent;
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StopLeadingEvent;
 import org.springframework.context.event.EventListener;
@@ -59,8 +60,18 @@ public final class ConfigurationWatcherHACoordinator {
 		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() + " became leader at : "
 				+ Instant.ofEpochMilli(event.getTimestamp()));
 		ConfigurationWatcherState state = stateStore.readOrCreate();
-		configMapDetector.ifAvailable(detector -> detector.start(state.configMapResourceVersions()));
-		secretsDetector.ifAvailable(detector -> detector.start(state.secretResourceVersions()));
+		configMapDetector.ifAvailable(detector -> detector.start(state.configMapResourceVersions(),
+				this::writeConfigMapResourceVersion));
+		secretsDetector.ifAvailable(detector -> detector.start(state.secretResourceVersions(),
+				this::writeSecretResourceVersion));
+	}
+
+	private void writeConfigMapResourceVersion(NamespaceAndResourceVersion resourceVersion) {
+		stateStore.writeConfigMapResourceVersion(resourceVersion.namespace(), resourceVersion.resourceVersion());
+	}
+
+	private void writeSecretResourceVersion(NamespaceAndResourceVersion resourceVersion) {
+		stateStore.writeSecretResourceVersion(resourceVersion.namespace(), resourceVersion.resourceVersion());
 	}
 
 	@EventListener

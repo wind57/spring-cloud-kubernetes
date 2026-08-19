@@ -27,6 +27,8 @@ import org.springframework.cloud.kubernetes.commons.leader.election.events.Start
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StopLeadingEvent;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,8 +61,8 @@ class ConfigurationWatcherHACoordinatorTests {
 
 		coordinator.onStartLeading(new StartLeadingEvent("candidate"));
 
-		verify(configMapDetector).start(Map.of("default", "config-map-rv"));
-		verify(secretsDetector).start(Map.of("default", "secret-rv"));
+		verify(configMapDetector).start(eq(Map.of("default", "config-map-rv")), any());
+		verify(secretsDetector).start(eq(Map.of("default", "secret-rv")), any());
 	}
 
 	@Test
