@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
+import org.springframework.cloud.kubernetes.configuration.watcher.ConfigurationWatcherConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -72,11 +73,6 @@ class ConfigurationWatcherHAAutoConfigurationTests {
 		}
 
 		@Bean
-		ConfigurationWatcherStateStore stateStore() {
-			return mock(ConfigurationWatcherStateStore.class);
-		}
-
-		@Bean
 		KubernetesClientEventBasedConfigMapChangeDetector configMapDetector() {
 			return mock(KubernetesClientEventBasedConfigMapChangeDetector.class);
 		}
@@ -84,6 +80,11 @@ class ConfigurationWatcherHAAutoConfigurationTests {
 		@Bean
 		KubernetesClientEventBasedSecretsChangeDetector secretsDetector() {
 			return mock(KubernetesClientEventBasedSecretsChangeDetector.class);
+		}
+
+		@Bean
+		ConfigurationWatcherConfigurationProperties properties() {
+			return new ConfigurationWatcherConfigurationProperties();
 		}
 
 	}

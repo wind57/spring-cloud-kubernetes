@@ -155,7 +155,7 @@ final class LeaseConfigurationWatcherStateStore implements ConfigurationWatcherS
 
 	private static Map<String, String> parseResourceVersions(String serializedResourceVersions) {
 		if (!StringUtils.hasText(serializedResourceVersions)) {
-			return Map.of();
+			return new HashMap<>(); // mutable on purpose
 		}
 
 		Map<String, String> resourceVersions = new LinkedHashMap<>();
