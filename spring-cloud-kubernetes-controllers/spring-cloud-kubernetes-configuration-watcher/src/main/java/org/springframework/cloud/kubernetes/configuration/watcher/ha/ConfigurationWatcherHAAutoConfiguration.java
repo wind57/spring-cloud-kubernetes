@@ -20,12 +20,16 @@ import io.kubernetes.client.openapi.ApiClient;
 import io.kubernetes.client.openapi.apis.CoordinationV1Api;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnCloudPlatform;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.cloud.CloudPlatform;
+import org.springframework.cloud.kubernetes.client.KubernetesClientAutoConfiguration;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
+import org.springframework.cloud.kubernetes.client.leader.election.KubernetesClientLeaderElectionCallbacksAutoConfiguration;
 import org.springframework.cloud.kubernetes.commons.leader.election.ConditionalOnLeaderElectionEnabled;
 import org.springframework.cloud.kubernetes.configuration.watcher.ConfigurationWatcherConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -45,6 +49,8 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnConfigurationWatcherHAEnabled
 @ConditionalOnLeaderElectionEnabled
 @ConditionalOnBean(ApiClient.class)
+@AutoConfigureAfter(KubernetesClientAutoConfiguration.class)
+@AutoConfigureBefore(KubernetesClientLeaderElectionCallbacksAutoConfiguration.class)
 class ConfigurationWatcherHAAutoConfiguration {
 
 	@Bean

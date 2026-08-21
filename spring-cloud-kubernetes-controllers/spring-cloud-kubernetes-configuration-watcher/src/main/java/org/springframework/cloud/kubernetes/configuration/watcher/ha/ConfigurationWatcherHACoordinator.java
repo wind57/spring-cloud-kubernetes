@@ -18,13 +18,16 @@ package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
 import java.time.Instant;
 
+import org.jspecify.annotations.NonNull;
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
 import org.springframework.cloud.kubernetes.client.config.reload.NamespaceAndResourceVersion;
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StartLeadingEvent;
 import org.springframework.cloud.kubernetes.commons.leader.election.events.StopLeadingEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.context.ApplicationEvent;
+import org.springframework.context.ApplicationListener;
 import org.springframework.core.log.LogAccessor;
 
 /**
@@ -32,19 +35,19 @@ import org.springframework.core.log.LogAccessor;
  *
  * @author wind57
  */
-public final class ConfigurationWatcherHACoordinator {
+final class ConfigurationWatcherHACoordinator implements ApplicationListener<@NonNull ApplicationEvent> {
 
 	private static final LogAccessor LOG = new LogAccessor(ConfigurationWatcherHACoordinator.class);
 
-	private final ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector;
+	private final ObjectProvider<@NonNull KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector;
 
-	private final ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector;
+	private final ObjectProvider<@NonNull KubernetesClientEventBasedSecretsChangeDetector> secretsDetector;
 
 	private final ConfigurationWatcherStateStore stateStore;
 
-	public ConfigurationWatcherHACoordinator(
-			ObjectProvider<KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector,
-			ObjectProvider<KubernetesClientEventBasedSecretsChangeDetector> secretsDetector,
+	ConfigurationWatcherHACoordinator(
+			ObjectProvider<@NonNull KubernetesClientEventBasedConfigMapChangeDetector> configMapDetector,
+			ObjectProvider<@NonNull KubernetesClientEventBasedSecretsChangeDetector> secretsDetector,
 			ConfigurationWatcherStateStore stateStore) {
 		if (configMapDetector.getIfAvailable() == null && secretsDetector.getIfAvailable() == null) {
 			throw new IllegalStateException(
@@ -55,7 +58,16 @@ public final class ConfigurationWatcherHACoordinator {
 		this.stateStore = stateStore;
 	}
 
-	@EventListener
+	@Override
+	public void onApplicationEvent(ApplicationEvent event) {
+		if (event instanceof StartLeadingEvent startLeadingEvent) {
+			onStartLeading(startLeadingEvent);
+		}
+		else if (event instanceof StopLeadingEvent stopLeadingEvent) {
+			onStopLeading(stopLeadingEvent);
+		}
+	}
+
 	void onStartLeading(StartLeadingEvent event) {
 		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity() + " became leader at : "
 				+ Instant.ofEpochMilli(event.getTimestamp()));
@@ -66,20 +78,19 @@ public final class ConfigurationWatcherHACoordinator {
 			.ifAvailable(detector -> detector.start(state.secretResourceVersions(), this::writeSecretResourceVersion));
 	}
 
+	void onStopLeading(StopLeadingEvent event) {
+		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity()
+				+ " stopped being a leader at : " + Instant.ofEpochMilli(event.getTimestamp()));
+		secretsDetector.ifAvailable(KubernetesClientEventBasedSecretsChangeDetector::stop);
+		configMapDetector.ifAvailable(KubernetesClientEventBasedConfigMapChangeDetector::stop);
+	}
+
 	private void writeConfigMapResourceVersion(NamespaceAndResourceVersion resourceVersion) {
 		stateStore.writeConfigMapResourceVersion(resourceVersion.namespace(), resourceVersion.resourceVersion());
 	}
 
 	private void writeSecretResourceVersion(NamespaceAndResourceVersion resourceVersion) {
 		stateStore.writeSecretResourceVersion(resourceVersion.namespace(), resourceVersion.resourceVersion());
-	}
-
-	@EventListener
-	void onStopLeading(StopLeadingEvent event) {
-		LOG.info(() -> "configuration watcher with identity : " + event.candidateIdentity()
-				+ " stopped being a leader at : " + Instant.ofEpochMilli(event.getTimestamp()));
-		secretsDetector.ifAvailable(KubernetesClientEventBasedSecretsChangeDetector::stop);
-		configMapDetector.ifAvailable(KubernetesClientEventBasedConfigMapChangeDetector::stop);
 	}
 
 }

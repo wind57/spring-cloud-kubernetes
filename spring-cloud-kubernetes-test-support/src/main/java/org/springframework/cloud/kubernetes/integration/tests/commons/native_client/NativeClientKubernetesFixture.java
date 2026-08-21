@@ -507,7 +507,7 @@ public final class NativeClientKubernetesFixture {
 	}
 
 	public void configWatcher(Phase phase, String refreshDelay, boolean reloadEnabled, String[] watchNamespaces,
-			boolean kafkaEnabled, boolean rabbitMqEnabled) {
+			boolean kafkaEnabled, boolean rabbitMqEnabled, boolean enableHa) {
 
 		V1Deployment deployment = yaml("config-watcher/deployment.yaml", V1Deployment.class);
 		V1Service service = yaml("config-watcher/service.yaml", V1Service.class);
@@ -521,6 +521,11 @@ public final class NativeClientKubernetesFixture {
 		envVars.add(new V1EnvVar().name("LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_CLOUD_KUBERNETES_CLIENT_CONFIG_RELOAD")
 			.value("DEBUG"));
 		envVars.add(new V1EnvVar().name("SPRING_CLOUD_KUBERNETES_SECRETS_ENABLED").value("TRUE"));
+
+		if (enableHa) {
+			envVars.add(new V1EnvVar().name("SPRING_CLOUD_KUBERNETES_LEADER_ELECTION_ENABLED").value("true"));
+			envVars.add(new V1EnvVar().name("SPRING_CLOUD_KUBERNETES_CONFIGURATION_WATCHER_HA_ENABLED").value("true"));
+		}
 
 		if (kafkaEnabled) {
 			envVars.add(new V1EnvVar().name("SPRING_PROFILES_ACTIVE").value("bus-kafka"));

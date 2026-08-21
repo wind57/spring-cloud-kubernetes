@@ -113,7 +113,12 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 		// In HA mode, defer informer startup until this instance acquires leadership.
 		// The leader callback restores the persisted state and then starts the informers.
 		if (!haEnabled) {
+			LOG.info(() -> "config watcher HA is disabled : starting configmap informers immediately");
 			start(Map.of(), null);
+		}
+		else {
+			LOG.info(() -> "config watcher HA is enabled : deferring configmap informer startup "
+					+ "until leadership is acquired");
 		}
 	}
 
