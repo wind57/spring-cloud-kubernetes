@@ -114,7 +114,7 @@ public final class NativeClientIntegrationTestExtension
 			nativeClientKubernetesFixture.configWatcher(Phase.CREATE, scenario.configurationWatcher().refreshDelay(),
 					scenario.configurationWatcher().reloadEnabled(), scenario.configurationWatcher().watchNamespaces(),
 					scenario.configurationWatcher().kafkaEnabled(), scenario.configurationWatcher().rabbitMqEnabled(),
-					scenario.configurationWatcher().enableHa());
+					scenario.configurationWatcher().enableHa(), scenario.configurationWatcher().replicas());
 		}
 
 		// 11. deploy discovery server
@@ -158,7 +158,7 @@ public final class NativeClientIntegrationTestExtension
 
 		// 5. delete configuration watcher.
 		if (scenario.configurationWatcher().enabled()) {
-			nativeClientKubernetesFixture.configWatcher(Phase.DELETE, "", false, null, false, false, false);
+			nativeClientKubernetesFixture.configWatcher(Phase.DELETE, "", false, null, false, false, false, 1);
 		}
 
 		// 6. delete all namespaces

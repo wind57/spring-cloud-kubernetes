@@ -507,10 +507,11 @@ public final class NativeClientKubernetesFixture {
 	}
 
 	public void configWatcher(Phase phase, String refreshDelay, boolean reloadEnabled, String[] watchNamespaces,
-			boolean kafkaEnabled, boolean rabbitMqEnabled, boolean enableHa) {
+			boolean kafkaEnabled, boolean rabbitMqEnabled, boolean enableHa, int replicas) {
 
 		V1Deployment deployment = yaml("config-watcher/deployment.yaml", V1Deployment.class);
 		V1Service service = yaml("config-watcher/service.yaml", V1Service.class);
+		deployment.getSpec().setReplicas(replicas);
 
 		List<V1EnvVar> envVars = new ArrayList<>();
 		envVars
@@ -587,9 +588,10 @@ public final class NativeClientKubernetesFixture {
 
 	private void waitForDeployment(String namespace, V1Deployment deployment) {
 		String deploymentName = deploymentName(deployment);
+		int expectedReplicas = deployment.getSpec().getReplicas() == null ? 1 : deployment.getSpec().getReplicas();
 		Awaitilities.awaitUntil(600, 1000, () -> {
 			try {
-				return isDeploymentReady(deploymentName, namespace);
+				return isDeploymentReady(deploymentName, namespace, expectedReplicas);
 			}
 			catch (ApiException e) {
 				throw new RuntimeException(e);
@@ -726,7 +728,8 @@ public final class NativeClientKubernetesFixture {
 
 	}
 
-	private boolean isDeploymentReady(String deploymentName, String namespace) throws ApiException {
+	private boolean isDeploymentReady(String deploymentName, String namespace, int expectedReplicas)
+			throws ApiException {
 		V1DeploymentList deployments = appsV1Api.listNamespacedDeployment(namespace)
 			.fieldSelector("metadata.name=" + deploymentName)
 			.execute();
@@ -739,7 +742,7 @@ public final class NativeClientKubernetesFixture {
 			logDeploymentConditions(deployment.getStatus().getConditions(), deployment.getMetadata().getNamespace());
 			LOG.info("Available replicas for " + deploymentName + ": "
 					+ (availableReplicas == null ? 0 : availableReplicas));
-			return availableReplicas != null && availableReplicas >= 1;
+			return availableReplicas != null && availableReplicas >= expectedReplicas;
 		}
 		else {
 			return false;

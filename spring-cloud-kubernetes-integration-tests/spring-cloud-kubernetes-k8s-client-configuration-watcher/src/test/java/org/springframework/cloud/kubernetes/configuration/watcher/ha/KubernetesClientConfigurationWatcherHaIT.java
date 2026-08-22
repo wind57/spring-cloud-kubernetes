@@ -16,10 +16,13 @@
 
 package org.springframework.cloud.kubernetes.configuration.watcher.ha;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.testcontainers.k3s.K3sContainer;
 
-import org.springframework.cloud.kubernetes.integration.tests.commons.Commons;
+import org.springframework.cloud.kubernetes.integration.tests.commons.Awaitilities;
 import org.springframework.cloud.kubernetes.integration.tests.commons.k3s.NativeClientIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,34 +35,60 @@ import static org.assertj.core.api.Assertions.assertThat;
 @NativeClientIntegrationTest(withImages = { "spring-cloud-kubernetes-configuration-watcher" },
 		rbacNamespaces = "default",
 		configurationWatcher = @NativeClientIntegrationTest.ConfigurationWatcher(enabled = true, enableHa = true,
-				refreshDelay = "0", reloadEnabled = false))
+				replicas = 2, refreshDelay = "0", reloadEnabled = false))
 class KubernetesClientConfigurationWatcherHaIT {
-
-	private static final String CONFIGURATION_WATCHER_APP = "spring-cloud-kubernetes-configuration-watcher";
-
-	private static final String LEADER_ELECTION_LEASE = "spring-k8s-leader-election-lock";
-
-	private static final String CONFIGURATION_WATCHER_STATE_LEASE = "configuration-watcher-ha";
 
 	/**
 	 * <pre>
-	 *     - start one configuration watcher with HA enabled
-	 *     - wait until it becomes leader and creates the HA state lease
-	 *     - verify that both the leader-election and state leases exist
+	 *     - start two configuration watcher replicas with HA enabled
+	 *     - wait until both replicas are running
+	 *     - verify that exactly one replica holds the leader-election lease
 	 * </pre>
 	 */
 	@Test
-	void startsAsLeaderAndCreatesHaStateLease(K3sContainer container) throws Exception {
-		Commons.waitForLogStatement("Creating watcher HA lease with name : " + CONFIGURATION_WATCHER_STATE_LEASE,
-				container, CONFIGURATION_WATCHER_APP);
+	void startsTwoReplicasWithSingleLeader(K3sContainer container) {
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
+			try {
+				List<String> runningPods = runningPods(container);
+				assertThat(runningPods).hasSize(2);
 
-		String leases = container
-			.execInContainer("kubectl", "get", "lease", LEADER_ELECTION_LEASE, CONFIGURATION_WATCHER_STATE_LEASE,
-					"--namespace", "default", "--output", "name")
-			.getStdout();
+				// we have two replicas, one is the HA leader
+				String holderIdentity = container
+					.execInContainer("sh", "-c",
+							"kubectl get lease -n default spring-k8s-leader-election-lock"
+									+ " -o jsonpath='{.spec.holderIdentity}'")
+					.getStdout()
+					.trim();
 
-		assertThat(leases).contains("lease.coordination.k8s.io/" + LEADER_ELECTION_LEASE,
-				"lease.coordination.k8s.io/" + CONFIGURATION_WATCHER_STATE_LEASE);
+				assertThat(holderIdentity).isNotBlank();
+				assertThat(runningPods).contains(holderIdentity);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+	}
+
+	/**
+	 * get both pods as part of the replica of the deployment.
+	 */
+	private List<String> runningPods(K3sContainer container) {
+		try {
+			String runningPods = container
+				.execInContainer("sh", "-c",
+					"kubectl get pods -n default -l app=spring-cloud-kubernetes-configuration-watcher"
+						+ " --field-selector=status.phase=Running"
+						+ " -o jsonpath='{.items[*].metadata.name}'")
+				.getStdout()
+				.trim();
+
+			return runningPods.isEmpty() ? List.of()
+				: Arrays.stream(runningPods.split("\\s+")).toList();
+
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+
 	}
 
 }
