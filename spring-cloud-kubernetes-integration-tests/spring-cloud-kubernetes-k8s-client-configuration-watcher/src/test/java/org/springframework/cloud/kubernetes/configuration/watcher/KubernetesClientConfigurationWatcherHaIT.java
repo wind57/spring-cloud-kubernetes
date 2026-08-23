@@ -110,7 +110,7 @@ class KubernetesClientConfigurationWatcherHaIT {
 		TestUtil.verifyActuatorCalled(1);
 
 		// 6. the new resourceVersion is not equal to the previous one
-		// 7. we have the lastest resourceVersion in our store
+		// 7. we have the latest resourceVersion in our store
 		Awaitilities.awaitUntilAsserted(120, 1000,
 				() -> {
 					String afterPatchResourceVersion = configMapResourceVersionInStateLease(container);
