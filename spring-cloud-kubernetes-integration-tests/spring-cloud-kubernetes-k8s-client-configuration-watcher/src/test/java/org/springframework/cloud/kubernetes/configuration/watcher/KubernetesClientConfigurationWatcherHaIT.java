@@ -18,6 +18,7 @@ package org.springframework.cloud.kubernetes.configuration.watcher;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
 import org.junit.jupiter.api.AfterAll;
@@ -36,10 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author wind57
  */
-@NativeClientIntegrationTest(withImages = { "spring-cloud-kubernetes-configuration-watcher" },
-		wiremock = @NativeClientIntegrationTest.Wiremock(enabled = true, namespaces = "default", withNodePort = true),
-		rbacNamespaces = "default",
-		configurationWatcher = @NativeClientIntegrationTest.ConfigurationWatcher(enabled = true, enableHa = true,
+	@NativeClientIntegrationTest(withImages = { "spring-cloud-kubernetes-configuration-watcher" },
+			wiremock = @NativeClientIntegrationTest.Wiremock(enabled = true, namespaces = "default", withNodePort = true),
+			rbacNamespaces = "default",
+			configurationWatcher = @NativeClientIntegrationTest.ConfigurationWatcher(enabled = true, enableHa = true,
 				replicas = 2, refreshDelay = "0", reloadEnabled = false))
 class KubernetesClientConfigurationWatcherHaIT {
 
@@ -63,29 +64,24 @@ class KubernetesClientConfigurationWatcherHaIT {
 	 *     - update the ConfigMap once
 	 *     - verify that the change triggers exactly one actuator refresh
 	 *     - verify that the updated resource version is stored in the HA Lease
+	 *     - delete the current leader
+	 *     - update the ConfigMap while no watcher is leading
+	 *     - verify that no actuator refresh is sent before leadership changes
+	 *     - verify that the new leader replays the missed event
 	 * </pre>
 	 */
 	@Test
-	void persistsResourceVersionAndTriggersRefreshWithTwoReplicas(K3sContainer container) {
+	void persistsResourceVersionAndReplaysChangeAfterLeaderLoss(K3sContainer container) {
 
 		// 1. we have two replicas running
 		// 2. only one is the HA leader
 		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
 			try {
+				// we have two replicas, one is the HA leader
 				List<String> runningPods = runningPods(container);
 				assertThat(runningPods).hasSize(2);
 
-				// we have two replicas, one is the HA leader
-				String exec = """
-					kubectl get lease -n default spring-k8s-leader-election-lock \\
-						-o "jsonpath={.spec.holderIdentity}"
-					""";
-
-				String holderIdentity = container
-					.execInContainer("sh", "-c", exec)
-					.getStdout()
-					.trim();
-
+				String holderIdentity = currentLeaderAccordingToLeaderLease(container);
 				assertThat(holderIdentity).isNotBlank();
 				assertThat(runningPods).contains(holderIdentity);
 			}
@@ -94,29 +90,94 @@ class KubernetesClientConfigurationWatcherHaIT {
 			}
 		});
 
-		// 3. resource version of the configmap is present in out store
-		String initialResourceVersion = configMapResourceVersion(container);
+		// 3. resource version of the configmap is present in our store
+		String firstResourceVersion = configMapResourceVersion(container);
 		Awaitilities.awaitUntilAsserted(120, 1000,
-			() -> assertThat(configMapResourceVersionInStateLease(container))
-				.isEqualTo(initialResourceVersion));
+			() -> {
+				Optional<String> resourceVersionInStateLease = configMapResourceVersionInStateLease(container);
+				assertThat(resourceVersionInStateLease).isPresent();
+				assertThat(resourceVersionInStateLease.get()).isEqualTo(firstResourceVersion);
+			});
 
-		// 4. once we update the configmap, resourceVersion changes, and we have it in out store.
+		// 4. once we update the configmap, resourceVersion changes, and we have it in our store.
 		WireMock.resetAllRequests();
-		patchConfigMap(container);
-		String updatedResourceVersion = configMapResourceVersion(container);
+		patchConfigMap(container, "updated");
+		String secondResourceVersion = configMapResourceVersion(container);
 
 		// 5. because of the update in the configmap, watcher caught that and sent a
 		// refresh call to the actuator ( wiremock in our test )
-		TestUtil.verifyActuatorCalled(1);
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> TestUtil.verifyActuatorCalled(1));
+		WireMock.resetAllRequests();
 
 		// 6. the new resourceVersion is not equal to the previous one
 		// 7. we have the latest resourceVersion in our store
 		Awaitilities.awaitUntilAsserted(120, 1000,
 				() -> {
-					String afterPatchResourceVersion = configMapResourceVersionInStateLease(container);
-					assertThat(afterPatchResourceVersion).isNotEqualTo(initialResourceVersion);
-					assertThat(afterPatchResourceVersion).isEqualTo(updatedResourceVersion);
+					Optional<String> afterPatchResourceVersion = configMapResourceVersionInStateLease(container);
+					assertThat(afterPatchResourceVersion).isPresent();
+					assertThat(afterPatchResourceVersion.get()).isNotEqualTo(firstResourceVersion);
+					assertThat(afterPatchResourceVersion.get()).isEqualTo(secondResourceVersion);
 				});
+
+		// 8. delete the current leader and wait until it is gone.
+		String firstLeader = currentLeaderAccordingToLeaderLease(container);
+		deletePod(container, firstLeader);
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
+			// pods do not contain the leader anymore ( we have removed it )
+			assertThat(runningPods(container)).doesNotContain(firstLeader);
+			// but the lease still holds the pod that was removed ( since the lease has not expired yet )
+			assertThat(currentLeaderAccordingToLeaderLease(container)).isEqualTo(firstLeader);
+		});
+		// from the moment the above assertions pass, we have roughly 15 seconds
+		// before a new pod acquires the leadership ( this is lease-duration )
+		// within this time we need to patch configmap and make a few assertions
+		// before a new leader is established
+
+
+		// 9. update configmap while there is no actual leader established
+		// resourceVersion is incremented in k8s, but we do not store it
+		patchConfigMap(container, "updated-after-leader-loss");
+		String thirdResourceVersion = configMapResourceVersion(container);
+
+		// resourceVersion has incremented in k8s
+		assertThat(thirdResourceVersion).isNotEqualTo(secondResourceVersion);
+		// but it stays the previous one in the state store
+		assertThat(configMapResourceVersionInStateLease(container)).contains(secondResourceVersion);
+
+		// since there is no config watcher leader, refresh does not happen, since no one triggered it
+		WireMock.verify(WireMock.exactly(0), WireMock.postRequestedFor(WireMock.urlEqualTo("/actuator/refresh")));
+
+		// 10. leadership is again established, the resourceVersion that we missed is delivered to us
+		// and the refresh is triggered
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
+			String secondLeader = currentLeaderAccordingToLeaderLease(container);
+			assertThat(secondLeader).isNotBlank().isNotEqualTo(firstLeader);
+			assertThat(runningPods(container)).contains(secondLeader);
+		});
+
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> TestUtil.verifyActuatorCalled(1));
+
+		// 11. the resource version from the replayed event is stored in the HA Lease.
+		Awaitilities.awaitUntilAsserted(120, 1000,
+				() -> assertThat(configMapResourceVersionInStateLease(container))
+					.contains(thirdResourceVersion));
+	}
+
+	private String currentLeaderAccordingToLeaderLease(K3sContainer container) {
+		String exec = """
+			kubectl get lease -n default spring-k8s-leader-election-lock \\
+				-o "jsonpath={.spec.holderIdentity}"
+			""";
+
+		try {
+			return container
+				.execInContainer("sh", "-c", exec)
+				.getStdout()
+				.trim();
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	/**
@@ -165,7 +226,7 @@ class KubernetesClientConfigurationWatcherHaIT {
 		}
 	}
 
-	private String configMapResourceVersionInStateLease(K3sContainer container) {
+	private Optional<String> configMapResourceVersionInStateLease(K3sContainer container) {
 
 		String exec = """
 			kubectl get lease -n default configuration-watcher-ha \\
@@ -173,26 +234,49 @@ class KubernetesClientConfigurationWatcherHaIT {
 			""";
 
 		try {
+
 			// default=123
 			String storedResourceVersion = container
 				.execInContainer("sh", "-c", exec)
 				.getStdout()
 				.trim();
 			// get only the 123 part
-			return storedResourceVersion.substring("default=".length());
+
+			if (!storedResourceVersion.trim().isEmpty()) {
+				return Optional.of(storedResourceVersion.substring("default=".length()));
+			}
+
+			return Optional.empty();
+
 		}
 		catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
 
-	private void patchConfigMap(K3sContainer container) {
+	private void patchConfigMap(K3sContainer container, String value) {
 		String exec = """
 			kubectl patch configmap service-wiremock -n default --type merge \\
-				-p '{"data":{"foo":"updated"}}'
-			""";
+				-p '{"data":{"foo":"%s"}}'
+			""".formatted(value);
 
 		try {
+			container.execInContainer("sh", "-c", exec);
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	// Kill the pod without graceful shutdown.
+	// This prevents the leader-election code from releasing the Lease.
+	// The next replica must wait for the Lease to expire before acquiring leadership.
+	// so we wait until it is removed, but do not --force it.
+	private void deletePod(K3sContainer container, String podName) {
+		try {
+			String exec = """
+				kubectl delete pod -n default ${podName} --grace-period=0 --wait=true
+				""".replace("${podName}", podName);
 			container.execInContainer("sh", "-c", exec);
 		}
 		catch (Exception e) {
