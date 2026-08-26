@@ -149,6 +149,10 @@ class KubernetesClientConfigurationWatcherHaIT {
 		// but it stays the previous one in the state store
 		assertThat(configMapResourceVersionInStateLease(container)).contains(secondResourceVersion);
 
+		// no leader was active, so this update must not have triggered an actuator call
+		WireMock.verify(WireMock.exactly(0),
+				WireMock.postRequestedFor(WireMock.urlEqualTo("/actuator/refresh")));
+
 		// 10. leadership is again established, the resourceVersion that we missed is
 		// delivered to us
 		// and the refresh is triggered
