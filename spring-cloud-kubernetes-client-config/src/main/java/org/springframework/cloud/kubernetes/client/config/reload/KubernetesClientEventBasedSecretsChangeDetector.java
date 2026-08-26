@@ -164,7 +164,8 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 				// previous leader. Restore the informer from exactly that snapshot so its
 				// following WATCH requests start at the same version and can deliver
 				// every change after the checkpoint.
-				if (!params.watch && params.resourceVersion == null && resourceVersion != null) {
+				// we do not need haEnabled check here, but it short-circuits fast
+				if (haEnabled && !params.watch && params.resourceVersion == null && resourceVersion != null) {
 					request.resourceVersionMatch("Exact");
 				}
 				return request.buildCall(null);
