@@ -398,10 +398,6 @@ class KubernetesClientEventBasedSecretsChangeDetectorTests {
 		Assertions.assertThat(result).isFalse();
 	}
 
-	private void changeDetectorAssert() {
-		changeDetectorAssert(true);
-	}
-
 	private void changeDetectorAssert(boolean haEnabled) {
 
 		// coreV1Api
