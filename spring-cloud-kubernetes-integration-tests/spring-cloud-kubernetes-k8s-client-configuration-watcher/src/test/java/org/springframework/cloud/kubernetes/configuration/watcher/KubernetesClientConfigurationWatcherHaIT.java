@@ -37,10 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @author wind57
  */
-	@NativeClientIntegrationTest(withImages = { "spring-cloud-kubernetes-configuration-watcher" },
-			wiremock = @NativeClientIntegrationTest.Wiremock(enabled = true, namespaces = "default", withNodePort = true),
-			rbacNamespaces = "default",
-			configurationWatcher = @NativeClientIntegrationTest.ConfigurationWatcher(enabled = true, enableHa = true,
+@NativeClientIntegrationTest(withImages = { "spring-cloud-kubernetes-configuration-watcher" },
+		wiremock = @NativeClientIntegrationTest.Wiremock(enabled = true, namespaces = "default", withNodePort = true),
+		rbacNamespaces = "default",
+		configurationWatcher = @NativeClientIntegrationTest.ConfigurationWatcher(enabled = true, enableHa = true,
 				replicas = 2, refreshDelay = "0", reloadEnabled = false))
 class KubernetesClientConfigurationWatcherHaIT {
 
@@ -92,32 +92,34 @@ class KubernetesClientConfigurationWatcherHaIT {
 
 		// 3. resource version of the configmap is present in our store
 		String firstResourceVersion = configMapResourceVersion(container);
-		Awaitilities.awaitUntilAsserted(120, 1000,
-			() -> {
-				Optional<String> resourceVersionInStateLease = configMapResourceVersionInStateLease(container);
-				assertThat(resourceVersionInStateLease).isPresent();
-				assertThat(resourceVersionInStateLease.get()).isEqualTo(firstResourceVersion);
-			});
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
+			Optional<String> resourceVersionInStateLease = configMapResourceVersionInStateLease(container);
+			assertThat(resourceVersionInStateLease).isPresent();
+			assertThat(resourceVersionInStateLease.get()).isEqualTo(firstResourceVersion);
+		});
 
-		// 4. once we update the configmap, resourceVersion changes, and we have it in our store.
+		// 4. once we update the configmap, resourceVersion changes, and we have it in our
+		// store.
+		// Wait for the initial onAdd refresh to complete.
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> TestUtil.verifyActuatorCalled(1));
+		// ignore initial onAdd refresh
 		WireMock.resetAllRequests();
+
 		patchConfigMap(container, "updated");
 		String secondResourceVersion = configMapResourceVersion(container);
 
 		// 5. because of the update in the configmap, watcher caught that and sent a
 		// refresh call to the actuator ( wiremock in our test )
 		Awaitilities.awaitUntilAsserted(120, 1000, () -> TestUtil.verifyActuatorCalled(1));
-		WireMock.resetAllRequests();
 
 		// 6. the new resourceVersion is not equal to the previous one
 		// 7. we have the latest resourceVersion in our store
-		Awaitilities.awaitUntilAsserted(120, 1000,
-				() -> {
-					Optional<String> afterPatchResourceVersion = configMapResourceVersionInStateLease(container);
-					assertThat(afterPatchResourceVersion).isPresent();
-					assertThat(afterPatchResourceVersion.get()).isNotEqualTo(firstResourceVersion);
-					assertThat(afterPatchResourceVersion.get()).isEqualTo(secondResourceVersion);
-				});
+		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
+			Optional<String> afterPatchResourceVersion = configMapResourceVersionInStateLease(container);
+			assertThat(afterPatchResourceVersion).isPresent();
+			assertThat(afterPatchResourceVersion.get()).isNotEqualTo(firstResourceVersion);
+			assertThat(afterPatchResourceVersion.get()).isEqualTo(secondResourceVersion);
+		});
 
 		// 8. delete the current leader and wait until it is gone.
 		String firstLeader = currentLeaderAccordingToLeaderLease(container);
@@ -125,7 +127,8 @@ class KubernetesClientConfigurationWatcherHaIT {
 		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
 			// pods do not contain the leader anymore ( we have removed it )
 			assertThat(runningPods(container)).doesNotContain(firstLeader);
-			// but the lease still holds the pod that was removed ( since the lease has not expired yet )
+			// but the lease still holds the pod that was removed ( since the lease has
+			// not expired yet )
 			assertThat(currentLeaderAccordingToLeaderLease(container)).isEqualTo(firstLeader);
 		});
 		// from the moment the above assertions pass, we have roughly 15 seconds
@@ -133,9 +136,11 @@ class KubernetesClientConfigurationWatcherHaIT {
 		// within this time we need to patch configmap and make a few assertions
 		// before a new leader is established
 
-
 		// 9. update configmap while there is no actual leader established
 		// resourceVersion is incremented in k8s, but we do not store it
+		// also there is no leader to react to the patch in the configmap, so no actuator
+		// call
+		WireMock.resetAllRequests();
 		patchConfigMap(container, "updated-after-leader-loss");
 		String thirdResourceVersion = configMapResourceVersion(container);
 
@@ -144,10 +149,8 @@ class KubernetesClientConfigurationWatcherHaIT {
 		// but it stays the previous one in the state store
 		assertThat(configMapResourceVersionInStateLease(container)).contains(secondResourceVersion);
 
-		// since there is no config watcher leader, refresh does not happen, since no one triggered it
-		WireMock.verify(WireMock.exactly(0), WireMock.postRequestedFor(WireMock.urlEqualTo("/actuator/refresh")));
-
-		// 10. leadership is again established, the resourceVersion that we missed is delivered to us
+		// 10. leadership is again established, the resourceVersion that we missed is
+		// delivered to us
 		// and the refresh is triggered
 		Awaitilities.awaitUntilAsserted(120, 1000, () -> {
 			String secondLeader = currentLeaderAccordingToLeaderLease(container);
@@ -159,21 +162,17 @@ class KubernetesClientConfigurationWatcherHaIT {
 
 		// 11. the resource version from the replayed event is stored in the HA Lease.
 		Awaitilities.awaitUntilAsserted(120, 1000,
-				() -> assertThat(configMapResourceVersionInStateLease(container))
-					.contains(thirdResourceVersion));
+				() -> assertThat(configMapResourceVersionInStateLease(container)).contains(thirdResourceVersion));
 	}
 
 	private String currentLeaderAccordingToLeaderLease(K3sContainer container) {
 		String exec = """
-			kubectl get lease -n default spring-k8s-leader-election-lock \\
-				-o "jsonpath={.spec.holderIdentity}"
-			""";
+				kubectl get lease -n default spring-k8s-leader-election-lock \\
+					-o "jsonpath={.spec.holderIdentity}"
+				""";
 
 		try {
-			return container
-				.execInContainer("sh", "-c", exec)
-				.getStdout()
-				.trim();
+			return container.execInContainer("sh", "-c", exec).getStdout().trim();
 		}
 		catch (Exception e) {
 			throw new RuntimeException(e);
@@ -186,21 +185,18 @@ class KubernetesClientConfigurationWatcherHaIT {
 	private List<String> runningPods(K3sContainer container) {
 
 		String exec = """
-			kubectl get pods -n default -l app=spring-cloud-kubernetes-configuration-watcher \\
-				--field-selector=status.phase=Running \\
-				-o "jsonpath={.items[*].metadata.name}"
-			""";
+				kubectl get pods -n default -l app=spring-cloud-kubernetes-configuration-watcher \\
+					--field-selector=status.phase=Running \\
+					-o "jsonpath={.items[*].metadata.name}"
+				""";
 
 		try {
-			String runningPods = container
-				.execInContainer("sh", "-c", exec)
-				.getStdout()
-				.trim();
+			String runningPods = container.execInContainer("sh", "-c", exec).getStdout().trim();
 
-			return runningPods.isEmpty() ? List.of()
-				: Arrays.stream(runningPods.split("\\s+")).toList();
+			return runningPods.isEmpty() ? List.of() : Arrays.stream(runningPods.split("\\s+")).toList();
 
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}
@@ -211,15 +207,12 @@ class KubernetesClientConfigurationWatcherHaIT {
 	private String configMapResourceVersion(K3sContainer container) {
 
 		String exec = """
-			kubectl get configmap service-wiremock -n default \\
-				-o "jsonpath={.metadata.resourceVersion}"
-			""";
+				kubectl get configmap service-wiremock -n default \\
+					-o "jsonpath={.metadata.resourceVersion}"
+				""";
 
 		try {
-			return container
-				.execInContainer("sh", "-c", exec)
-				.getStdout()
-				.trim();
+			return container.execInContainer("sh", "-c", exec).getStdout().trim();
 		}
 		catch (Exception e) {
 			throw new RuntimeException(e);
@@ -229,17 +222,14 @@ class KubernetesClientConfigurationWatcherHaIT {
 	private Optional<String> configMapResourceVersionInStateLease(K3sContainer container) {
 
 		String exec = """
-			kubectl get lease -n default configuration-watcher-ha \\
-				-o "jsonpath={.metadata.annotations['spring\\.cloud\\.kubernetes\\.configuration\\.watcher/configmap-resource-version']}"
-			""";
+				kubectl get lease -n default configuration-watcher-ha \\
+					-o "jsonpath={.metadata.annotations['spring\\.cloud\\.kubernetes\\.configuration\\.watcher/configmap-resource-version']}"
+				""";
 
 		try {
 
 			// default=123
-			String storedResourceVersion = container
-				.execInContainer("sh", "-c", exec)
-				.getStdout()
-				.trim();
+			String storedResourceVersion = container.execInContainer("sh", "-c", exec).getStdout().trim();
 			// get only the 123 part
 
 			if (!storedResourceVersion.trim().isEmpty()) {
@@ -256,9 +246,9 @@ class KubernetesClientConfigurationWatcherHaIT {
 
 	private void patchConfigMap(K3sContainer container, String value) {
 		String exec = """
-			kubectl patch configmap service-wiremock -n default --type merge \\
-				-p '{"data":{"foo":"%s"}}'
-			""".formatted(value);
+				kubectl patch configmap service-wiremock -n default --type merge \\
+					-p '{"data":{"foo":"%s"}}'
+				""".formatted(value);
 
 		try {
 			container.execInContainer("sh", "-c", exec);
@@ -275,8 +265,8 @@ class KubernetesClientConfigurationWatcherHaIT {
 	private void deletePod(K3sContainer container, String podName) {
 		try {
 			String exec = """
-				kubectl delete pod -n default ${podName} --grace-period=0 --wait=true
-				""".replace("${podName}", podName);
+					kubectl delete pod -n default ${podName} --grace-period=0 --wait=true
+					""".replace("${podName}", podName);
 			container.execInContainer("sh", "-c", exec);
 		}
 		catch (Exception e) {

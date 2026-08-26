@@ -143,22 +143,35 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 			labelSelector = configMapsLabels;
 		}
 
+		ConfigMapResourceEventHandler handler = new ConfigMapResourceEventHandler(this::onEvent, resourceVersionWriter);
+
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1ConfigMap> informer;
-			ConfigMapResourceEventHandler handler = new ConfigMapResourceEventHandler(this::onEvent,
-					resourceVersionWriter);
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
-			informer = factory
-				.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedConfigMap(namespace)
-					.timeoutSeconds(params.timeoutSeconds)
-					.resourceVersion(resourceVersionResolver.resolve(namespace, params.resourceVersion))
-					.watch(params.watch)
-					.labelSelector(labelSelector(labelSelector))
-					.buildCall(null), V1ConfigMap.class, V1ConfigMapList.class);
+			informer = factory.sharedIndexInformerFor((CallGeneratorParams params) -> {
 
-			LOG.debug(
-					() -> "added configmap informer for namespace : " + namespace + " with labels : " + labelSelector);
+				String resourceVersion = resourceVersionResolver.resolve(namespace, params.resourceVersion);
+				var request = coreV1Api.listNamespacedConfigMap(namespace)
+					.timeoutSeconds(params.timeoutSeconds)
+					.resourceVersion(resourceVersion)
+					.watch(params.watch)
+					.labelSelector(labelSelector(labelSelector));
+
+				// The stored resource version is the last checkpoint processed by the
+				// previous
+				// leader. Restore the informer from exactly that snapshot so its
+				// following WATCH requests
+				// start at the same version and can deliver every change after the
+				// checkpoint.
+				if (!params.watch && params.resourceVersion == null && resourceVersion != null) {
+					request.resourceVersionMatch("Exact");
+				}
+
+				return request.buildCall(null);
+			}, V1ConfigMap.class, V1ConfigMapList.class);
+
+			LOG.debug(() -> "add configmap informer for namespace : " + namespace + " with labels : " + labelSelector);
 
 			informer.addEventHandler(handler);
 			informers.add(informer);

@@ -146,18 +146,31 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 			labelSelector = secretsLabels;
 		}
 
+		SecretResourceEventHandler handler = new SecretResourceEventHandler(this::onEvent, resourceVersionWriter);
 		namespaces.forEach(namespace -> {
 			SharedIndexInformer<V1Secret> informer;
-			SecretResourceEventHandler handler = new SecretResourceEventHandler(this::onEvent, resourceVersionWriter);
 			SharedInformerFactory factory = new SharedInformerFactory(apiClient);
 			factories.add(factory);
-			informer = factory
-				.sharedIndexInformerFor((CallGeneratorParams params) -> coreV1Api.listNamespacedSecret(namespace)
+			informer = factory.sharedIndexInformerFor((CallGeneratorParams params) -> {
+
+				String resourceVersion = resourceVersionResolver.resolve(namespace, params.resourceVersion);
+				var request = coreV1Api.listNamespacedSecret(namespace)
 					.timeoutSeconds(params.timeoutSeconds)
-					.resourceVersion(resourceVersionResolver.resolve(namespace, params.resourceVersion))
+					.resourceVersion(resourceVersion)
 					.watch(params.watch)
-					.labelSelector(labelSelector(labelSelector))
-					.buildCall(null), V1Secret.class, V1SecretList.class);
+					.labelSelector(labelSelector(labelSelector));
+
+				// The stored resource version is the last checkpoint processed by the
+				// previous
+				// leader. Restore the informer from exactly that snapshot so its
+				// following WATCH requests
+				// start at the same version and can deliver every change after the
+				// checkpoint.
+				if (!params.watch && params.resourceVersion == null && resourceVersion != null) {
+					request.resourceVersionMatch("Exact");
+				}
+				return request.buildCall(null);
+			}, V1Secret.class, V1SecretList.class);
 
 			LOG.debug(() -> "secret informer for namespace : " + namespace + " with filter : " + secretsLabels);
 
