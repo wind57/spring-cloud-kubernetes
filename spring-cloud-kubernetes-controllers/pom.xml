@@ -43,23 +43,11 @@
 					<artifactId>spring-boot-maven-plugin</artifactId>
 					<configuration>
 						<image>
-							<env>
-								<BP_SPRING_CLOUD_BINDINGS_DISABLED>true</BP_SPRING_CLOUD_BINDINGS_DISABLED>
-								<BP_LOG_LEVEL>DEBUG</BP_LOG_LEVEL>
-							</env>
 							<name>${env.IMAGE}</name>
 							<pullPolicy>IF_NOT_PRESENT</pullPolicy>
 						</image>
-						<goal>build-image</goal>
 					</configuration>
 					<executions>
-						<execution>
-							<id>build-image</id>
-							<phase>package</phase>
-							<goals>
-								<goal>build-image-no-fork</goal>
-							</goals>
-						</execution>
 						<execution>
 							<id>repackage</id>
 							<phase>package</phase>
