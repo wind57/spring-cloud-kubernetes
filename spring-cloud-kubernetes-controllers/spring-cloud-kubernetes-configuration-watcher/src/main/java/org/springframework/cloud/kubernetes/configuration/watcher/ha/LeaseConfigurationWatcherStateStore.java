@@ -113,7 +113,7 @@ final class LeaseConfigurationWatcherStateStore implements ConfigurationWatcherS
 			api.createNamespacedLease(leaseNamespace, newLease(leaseName, leaseNamespace)).execute();
 		}
 		catch (ApiException e) {
-			LOG.error(e, () -> "Failed to create watcher HA lease '" + e.getResponseBody());
+			LOG.error(e, () -> "Failed to create watcher HA lease. " + e.getResponseBody());
 			throw new IllegalStateException(
 					"Failed to create watcher HA lease '" + leaseName + "' in namespace '" + leaseNamespace + "'", e);
 		}
