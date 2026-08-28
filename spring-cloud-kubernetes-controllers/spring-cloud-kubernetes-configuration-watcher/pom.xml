@@ -109,17 +109,6 @@
 				</plugins>
 			</build>
 		</profile>
-		<profile>
-			<id>imagename</id>
-			<activation>
-				<property>
-					<name>!env.IMAGE</name>
-				</property>
-			</activation>
-			<properties>
-				<env.IMAGE>springcloud/${project.artifactId}:${project.version}</env.IMAGE>
-			</properties>
-		</profile>
 	</profiles>
 
 

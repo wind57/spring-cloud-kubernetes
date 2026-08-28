@@ -13,6 +13,10 @@
 	<artifactId>spring-cloud-kubernetes-controllers</artifactId>
 	<name>${project.artifactId}</name>
 
+	<properties>
+		<spring-cloud-kubernetes.controllers.image.name>springcloud/${project.artifactId}:${project.version}</spring-cloud-kubernetes.controllers.image.name>
+	</properties>
+
 	<modules>
 		<module>spring-cloud-kubernetes-configuration-watcher</module>
 		<module>spring-cloud-kubernetes-discoveryserver</module>
@@ -30,6 +34,17 @@
 
 	<profiles>
 		<profile>
+			<id>controller-image-name-from-environment</id>
+			<activation>
+				<property>
+					<name>env.IMAGE</name>
+				</property>
+			</activation>
+			<properties>
+				<spring-cloud-kubernetes.controllers.image.name>${env.IMAGE}</spring-cloud-kubernetes.controllers.image.name>
+			</properties>
+		</profile>
+		<profile>
 			<id>executable</id>
 			<activation>
 				<property>
@@ -43,23 +58,11 @@
 					<artifactId>spring-boot-maven-plugin</artifactId>
 					<configuration>
 						<image>
-							<env>
-								<BP_SPRING_CLOUD_BINDINGS_DISABLED>true</BP_SPRING_CLOUD_BINDINGS_DISABLED>
-								<BP_LOG_LEVEL>DEBUG</BP_LOG_LEVEL>
-							</env>
-							<name>${env.IMAGE}</name>
+							<name>${spring-cloud-kubernetes.controllers.image.name}</name>
 							<pullPolicy>IF_NOT_PRESENT</pullPolicy>
 						</image>
-						<goal>build-image</goal>
 					</configuration>
 					<executions>
-						<execution>
-							<id>build-image</id>
-							<phase>package</phase>
-							<goals>
-								<goal>build-image-no-fork</goal>
-							</goals>
-						</execution>
 						<execution>
 							<id>repackage</id>
 							<phase>package</phase>
