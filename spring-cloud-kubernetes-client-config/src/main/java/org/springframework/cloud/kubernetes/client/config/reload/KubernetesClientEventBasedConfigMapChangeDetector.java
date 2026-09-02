@@ -19,6 +19,7 @@ package org.springframework.cloud.kubernetes.client.config.reload;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import io.kubernetes.client.common.KubernetesObject;
@@ -75,7 +76,8 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Configura
 
 	private final Map<String, String> configMapsLabels;
 
-	private final ConfigMapResourceEventHandler handler = new ConfigMapResourceEventHandler(this::onEvent);
+	private final KubernetesResourceEventHandler<V1ConfigMap> handler = new KubernetesResourceEventHandler<>(
+			(left, right) -> Objects.equals(left.getData(), right.getData()), this::onEvent);
 
 	public KubernetesClientEventBasedConfigMapChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
