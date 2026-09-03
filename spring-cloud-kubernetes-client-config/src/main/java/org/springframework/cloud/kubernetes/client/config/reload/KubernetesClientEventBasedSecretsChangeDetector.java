@@ -77,7 +77,8 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends Configurati
 
 	private final Map<String, String> secretsLabels;
 
-	private final SecretResourceEventHandler handler = new SecretResourceEventHandler(LOG, this::onEvent);
+	private final KubernetesResourceEventHandler<V1Secret> handler = new KubernetesResourceEventHandler<>(
+			(left, right) -> equals(left.getData(), right.getData()), this::onEvent);
 
 	public KubernetesClientEventBasedSecretsChangeDetector(CoreV1Api coreV1Api, ConfigurableEnvironment environment,
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
