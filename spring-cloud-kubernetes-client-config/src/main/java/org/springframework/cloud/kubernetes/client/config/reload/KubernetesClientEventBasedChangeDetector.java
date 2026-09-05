@@ -27,8 +27,8 @@ import io.kubernetes.client.informer.SharedInformerFactory;
 import jakarta.annotation.PreDestroy;
 
 import org.springframework.cloud.bootstrap.config.PropertySourceLocator;
-import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadUtil;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadProperties;
+import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadUtil;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigurationChangeDetector;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigurationUpdateStrategy;
 import org.springframework.core.env.ConfigurableEnvironment;
@@ -79,9 +79,9 @@ abstract class KubernetesClientEventBasedChangeDetector extends ConfigurationCha
 		return Map.of(ConfigReloadProperties.RELOAD_LABEL_FILTER, "true");
 	}
 
-	protected final void onEvent(KubernetesObject resource) {
-		boolean reload = ConfigReloadUtil.reload(resource.getKind(), resource.toString(),
-			propertySourceLocator, environment, existingSourcesType);
+	protected void onEvent(KubernetesObject resource) {
+		boolean reload = ConfigReloadUtil.reload(resource.getKind(), resource.toString(), propertySourceLocator,
+				environment, existingSourcesType);
 		if (reload) {
 			reloadProperties();
 		}
