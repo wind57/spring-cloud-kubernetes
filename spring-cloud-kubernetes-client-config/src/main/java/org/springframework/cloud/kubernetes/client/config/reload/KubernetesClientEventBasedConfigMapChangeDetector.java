@@ -16,8 +16,6 @@
 
 package org.springframework.cloud.kubernetes.client.config.reload;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -30,7 +28,6 @@ import io.kubernetes.client.openapi.models.V1ConfigMap;
 import io.kubernetes.client.openapi.models.V1ConfigMapList;
 import io.kubernetes.client.util.CallGeneratorParams;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigMapPropertySource;
@@ -57,10 +54,6 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Kubernete
 
 	private final ApiClient apiClient;
 
-	private final List<SharedIndexInformer<V1ConfigMap>> informers = new ArrayList<>();
-
-	private final List<SharedInformerFactory> factories = new ArrayList<>();
-
 	private final Set<String> namespaces;
 
 	private final boolean enableReloadFiltering;
@@ -76,7 +69,7 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Kubernete
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientConfigMapPropertySourceLocator propertySourceLocator,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider) {
-		super(strategy, "config-map", propertySourceLocator, environment, KubernetesClientConfigMapPropertySource.class);
+		super(strategy, propertySourceLocator, environment, KubernetesClientConfigMapPropertySource.class);
 		this.coreV1Api = coreV1Api;
 		this.apiClient = createApiClientForInformerClient();
 		this.enableReloadFiltering = properties.enableReloadFiltering();
@@ -115,12 +108,6 @@ public class KubernetesClientEventBasedConfigMapChangeDetector extends Kubernete
 			});
 		}
 
-	}
-
-	@PreDestroy
-	void shutdown() {
-		informers.forEach(SharedIndexInformer::stop);
-		factories.forEach(SharedInformerFactory::stopAllRegisteredInformers);
 	}
 
 }

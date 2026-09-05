@@ -16,9 +16,15 @@
 
 package org.springframework.cloud.kubernetes.client.config.reload;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import io.kubernetes.client.common.KubernetesObject;
+import io.kubernetes.client.informer.SharedIndexInformer;
+import io.kubernetes.client.informer.SharedInformer;
+import io.kubernetes.client.informer.SharedInformerFactory;
+import jakarta.annotation.PreDestroy;
 
 import org.springframework.cloud.bootstrap.config.PropertySourceLocator;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadUtil;
@@ -36,19 +42,20 @@ abstract class KubernetesClientEventBasedChangeDetector extends ConfigurationCha
 
 	private static final LogAccessor LOG = new LogAccessor(KubernetesClientEventBasedChangeDetector.class);
 
-	private final String target;
-
 	private final PropertySourceLocator propertySourceLocator;
 
 	private final ConfigurableEnvironment environment;
 
 	private final Class<? extends MapPropertySource> existingSourcesType;
 
-	protected KubernetesClientEventBasedChangeDetector(ConfigurationUpdateStrategy strategy, String target,
+	protected final List<SharedIndexInformer<?>> informers = new ArrayList<>();
+
+	protected final List<SharedInformerFactory> factories = new ArrayList<>();
+
+	protected KubernetesClientEventBasedChangeDetector(ConfigurationUpdateStrategy strategy,
 			PropertySourceLocator propertySourceLocator, ConfigurableEnvironment environment,
 			Class<? extends MapPropertySource> existingSourcesType) {
 		super(strategy);
-		this.target = target;
 		this.propertySourceLocator = propertySourceLocator;
 		this.environment = environment;
 		this.existingSourcesType = existingSourcesType;
@@ -73,11 +80,17 @@ abstract class KubernetesClientEventBasedChangeDetector extends ConfigurationCha
 	}
 
 	protected final void onEvent(KubernetesObject resource) {
-		boolean reload = ConfigReloadUtil.reload(target, resource.toString(), propertySourceLocator, environment,
-				existingSourcesType);
+		boolean reload = ConfigReloadUtil.reload(resource.getKind(), resource.toString(),
+			propertySourceLocator, environment, existingSourcesType);
 		if (reload) {
 			reloadProperties();
 		}
+	}
+
+	@PreDestroy
+	protected void shutdown() {
+		informers.forEach(SharedInformer::stop);
+		factories.forEach(SharedInformerFactory::stopAllRegisteredInformers);
 	}
 
 }

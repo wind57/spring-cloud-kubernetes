@@ -16,9 +16,7 @@
 
 package org.springframework.cloud.kubernetes.client.config.reload;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -31,7 +29,6 @@ import io.kubernetes.client.openapi.models.V1Secret;
 import io.kubernetes.client.openapi.models.V1SecretList;
 import io.kubernetes.client.util.CallGeneratorParams;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.cloud.kubernetes.client.config.KubernetesClientSecretsPropertySource;
@@ -58,10 +55,6 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends KubernetesC
 
 	private final ApiClient apiClient;
 
-	private final List<SharedIndexInformer<V1Secret>> informers = new ArrayList<>();
-
-	private final List<SharedInformerFactory> factories = new ArrayList<>();
-
 	private final Set<String> namespaces;
 
 	private final boolean enableReloadFiltering;
@@ -77,7 +70,7 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends KubernetesC
 			ConfigReloadProperties properties, ConfigurationUpdateStrategy strategy,
 			KubernetesClientSecretsPropertySourceLocator propertySourceLocator,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider) {
-		super(strategy, "secrets", propertySourceLocator, environment, KubernetesClientSecretsPropertySource.class);
+		super(strategy, propertySourceLocator, environment, KubernetesClientSecretsPropertySource.class);
 		this.coreV1Api = coreV1Api;
 		this.apiClient = createApiClientForInformerClient();
 		this.enableReloadFiltering = properties.enableReloadFiltering();
@@ -115,12 +108,6 @@ public class KubernetesClientEventBasedSecretsChangeDetector extends KubernetesC
 			});
 		}
 
-	}
-
-	@PreDestroy
-	void shutdown() {
-		informers.forEach(SharedIndexInformer::stop);
-		factories.forEach(SharedInformerFactory::stopAllRegisteredInformers);
 	}
 
 	static boolean equals(Map<String, byte[]> left, Map<String, byte[]> right) {
